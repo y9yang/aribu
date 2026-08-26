@@ -1,0 +1,20 @@
+name: aribu
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
+  - pytorch-gpu          # NOT "pytorch": that resolves to the CPU build
+  - torchvision
+  - numpy
+  - pandas
+  - rasterio
+  - scikit-learn
+  - scikit-image         # Otsu thresholding, speckle filtering
+  - matplotlib
+  - tqdm
+  - ipykernel            # lets VS Code see this env as a notebook kernel
+  - jupyterlab
+  - streamlit
+  - pip
+  - pip:
+      - segmentation-models-pytorch
