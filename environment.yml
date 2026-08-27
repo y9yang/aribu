@@ -8,6 +8,7 @@ dependencies:
   - numpy
   - pandas
   - rasterio
+  - geopandas            # event polygons, chip footprints, spatial joins
   - scikit-learn
   - scikit-image         # Otsu thresholding, speckle filtering
   - matplotlib
