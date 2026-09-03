@@ -16,6 +16,9 @@ dependencies:
   - ipykernel            # lets VS Code see this env as a notebook kernel
   - jupyterlab
   - streamlit
+  - pytest               # test suite in tests/
   - pip
   - pip:
       - segmentation-models-pytorch
+      # this project, installed editable; run conda env create from the repo root
+      - -e .

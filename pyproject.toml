@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aribu"
+version = "0.1.0"
+description = "Flood-water segmentation from Sentinel-1 SAR imagery"
+requires-python = ">=3.14"
+# Dependencies live in environment.yml, not here. rasterio and geopandas need
+# conda's GDAL binaries; letting pip resolve them installs a second, conflicting
+# copy on top of the conda env. Install this package with:
+#     pip install -e . --no-deps
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
