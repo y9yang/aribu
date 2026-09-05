@@ -6,6 +6,12 @@ for _var, _sub in (("GDAL_DATA", "Library/share/gdal"), ("PROJ_DATA", "Library/s
     if _var not in os.environ and _path.is_dir():
         os.environ[_var] = str(_path)
 
+__all__ = [
+    "REPO_ROOT", "DATA_DIR", "RAW_DIR", "SPLIT_DIR",
+    "RESULTS_DIR", "DEMO_DIR", "EXTERNAL_DIR", "MODELS_DIR",
+    "S1_DIR", "LABEL_DIR", "OTSU_DIR", "METADATA_PATH",
+]
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if not (REPO_ROOT / "pyproject.toml").exists():
     raise RuntimeError(f"REPO_ROOT looks wrong: {REPO_ROOT}")

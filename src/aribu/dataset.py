@@ -6,6 +6,13 @@ from rasterio.crs import CRS
 from rasterio.transform import Affine
 from .paths import S1_DIR, LABEL_DIR, SPLIT_DIR
 
+__all__ = [
+    "LABEL_NODATA", "LABEL_LAND", "LABEL_WATER",
+    "CLIP_LO", "CLIP_HI", "VV_BAND", "VH_BAND", "IGNORE_INDEX",
+    "SPLIT_FILES", "SPLIT_ORDER",
+    "Chip", "load_chip", "valid_mask", "preprocess", "read_split", "load_splits",
+]
+
 LABEL_NODATA, LABEL_LAND, LABEL_WATER = -1, 0, 1
 CLIP_LO, CLIP_HI = -50.0, 1.0
 VV_BAND, VH_BAND = 1, 2
@@ -20,7 +27,7 @@ SPLIT_ORDER = tuple(SPLIT_FILES)
 
 class Chip(NamedTuple):
     """the data contained in a chip."""
-    chip_id: str
+    id: str
     loc: str            # the location/country name, parsed from the chip id with exception: Mekong -> Cambodia
     vv: np.ndarray          # float32 (512, 512), dB, NaN where no measurement
     vh: np.ndarray          # float32 (512, 512), dB, NaN where no measurement
@@ -40,7 +47,7 @@ def load_chip(chip_id):
     loc = chip_id.split("_")[0]
     if loc == "Mekong":
         loc = "Cambodia"
-    return Chip(chip_id=chip_id, loc=loc, vv=vv, vh=vh, label=label, crs=crs, transform=transform)
+    return Chip(id=chip_id, loc=loc, vv=vv, vh=vh, label=label, crs=crs, transform=transform)
 
 def valid_mask(chip):
     """
@@ -90,3 +97,19 @@ def read_split(splitname):
     if not (stems == df["label"].str.replace("_LabelHand.tif", "", regex=False)).all():
         raise ValueError(f"{filename}: S1 and label columns disagree")
     return stems.tolist()
+
+def load_splits():
+    """Returns {split name: list of chip IDs}, in SPLIT_ORDER."""
+    splits = {name: read_split(name) for name in SPLIT_ORDER}
+    for a in SPLIT_ORDER:
+        for b in SPLIT_ORDER:
+            if a < b:
+                overlap = set(splits[a]) & set(splits[b])
+                if overlap:
+                    raise ValueError(f"leakage: {a} and {b} share {len(overlap)} chips: "
+                                     f"{sorted(overlap)[:3]}")
+    listed = {c for chips in splits.values() for c in chips}
+    on_disk = {p.name.replace("_S1Hand.tif", "") for p in S1_DIR.glob("*_S1Hand.tif")}
+    if listed != on_disk:
+        raise ValueError(f"split/disk mismatch: {len(listed ^ on_disk)} chips differ")
+    return splits
