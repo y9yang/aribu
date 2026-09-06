@@ -51,10 +51,11 @@ def _score_chips(make_predictor, chip_ids, name):
                      **metrics_from_counts(counts)})
 
     per_chip = pd.DataFrame(rows)
-    assert total.sum() == n_valid_px, f"{total.sum():,} counted vs {n_valid_px:,} valid px"
+    if total.sum() != n_valid_px:
+        raise ValueError(f"{total.sum():,} counted vs {n_valid_px:,} valid px")
 
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
+        warnings.simplefilter("ignore", RuntimeWarning)         # necessary because some chips have no water
         macro = {k: float(np.nanmean(per_chip[k])) for k in METRIC_NAMES}
 
     return {"name": name, "n_chips": len(per_chip), "counts": dict(zip(COUNT_NAMES, total.tolist())),
