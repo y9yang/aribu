@@ -14,6 +14,7 @@ dependencies:
   - matplotlib
   - tqdm
   - ipykernel            # lets VS Code see this env as a notebook kernel
+  - ipywidgets           # tqdm.auto's progress bars; without it tqdm warns and falls back
   - jupyterlab
   - streamlit
   - pytest               # test suite in tests/
