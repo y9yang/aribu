@@ -15,8 +15,8 @@ LABEL_NAMES = {LABEL_NODATA: "no data", LABEL_LAND: "land", LABEL_WATER: "water"
 ERROR_COLOURS = np.array([
     [0.93, 0.93, 0.93],     # 0 correct land   (true negative)
     [0.16, 0.44, 0.71],     # 1 correct water  (true positive)
-    [0.84, 0.19, 0.15],     # 2 false alarm    (predicted water, was land)
-    [0.99, 0.75, 0.20],     # 3 missed flood   (was water, predicted land)
+    [0.99, 0.75, 0.20],     # 2 false alarm    (predicted water, was land)
+    [0.84, 0.19, 0.15],     # 3 missed flood   (was water, predicted land)
     [1.00, 1.00, 1.00],     # 4 no data
 ])
 
