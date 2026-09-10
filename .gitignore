@@ -1,9 +1,7 @@
-# Editors / tools
 .vscode/
 .claude/
 .ipynb_checkpoints/
 
-# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -11,14 +9,16 @@ __pycache__/
 build/
 dist/
 
-# Scratch work
 notebooks/scratch/
 
-# Vendored upstream repo
 Sen1Floods11-master/
 
-# Data: ignore everything, then re-admit the small tracked pieces
 data/*
 !data/splits/
 !data/external/
 !data/demo/
+
+models/*
+!models/.gitkeep
+!models/radar-only.pt
+!models/fusion.pt
