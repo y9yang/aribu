@@ -1,22 +1,28 @@
 from typing import NamedTuple
+from zlib import crc32
 import numpy as np
 import pandas as pd
 import rasterio
 from rasterio.crs import CRS
 from rasterio.transform import Affine
-from .paths import S1_DIR, LABEL_DIR, SPLIT_DIR
+from scipy.ndimage import gaussian_filter
+from .paths import S1_DIR, S2_DIR, LABEL_DIR, SPLIT_DIR
 
 __all__ = [
     "LABEL_NODATA", "LABEL_LAND", "LABEL_WATER",
     "CLIP_LO", "CLIP_HI", "VV_BAND", "VH_BAND", "IGNORE_INDEX",
-    "SPLIT_FILES", "SPLIT_ORDER",
+    "S2_BANDS", "SPLIT_FILES", "SPLIT_ORDER", "ARMS",
     "Chip", "load_chip", "valid_mask", "preprocess", "read_split", "load_splits",
+    "read_s2", "water_indices", "chip_input", "cloud_mask", "occluded_input",
 ]
 
 LABEL_NODATA, LABEL_LAND, LABEL_WATER = -1, 0, 1
 CLIP_LO, CLIP_HI = -50.0, 1.0
 VV_BAND, VH_BAND = 1, 2
 IGNORE_INDEX = 255
+# 1-based band index
+S2_BANDS = {name: i + 1 for i, name in enumerate(
+    ("B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B9", "B10", "B11", "B12"))}
 SPLIT_FILES = {
     "train": "flood_train_data.csv",
     "val": "flood_valid_data.csv",
@@ -24,6 +30,7 @@ SPLIT_FILES = {
     "bolivia": "flood_bolivia_data.csv",
 }
 SPLIT_ORDER = tuple(SPLIT_FILES)
+ARMS = ("s1", "s1+s2", "s2")     # using data from which sensors to train and evaluate a model
 
 class Chip(NamedTuple):
     """the data contained in a chip."""
@@ -86,6 +93,55 @@ def preprocess(chip, mean=None, std=None):
     y = np.where(chip.label == LABEL_WATER, 1, 0).astype(np.uint8)
     y[~valid] = IGNORE_INDEX
     return x, y, valid
+
+def read_s2(chip_id, bands):
+    """Read Sentinel-2 chips at given bands as float32 (len(bands), H, W). 0 marks no data."""
+    with rasterio.open(S2_DIR / f"{chip_id}_S2Hand.tif") as src:
+        return src.read([S2_BANDS[b] for b in bands]).astype(np.float32)
+
+def water_indices(chip_id):
+    """NDWI and MNDWI as float32 (2, H, W), -1 <= values <= 1.
+
+    NDWI  = (green - NIR)   / (green + NIR)
+    MNDWI = (green - SWIR1) / (green + SWIR1), which holds up better over built-up ground
+    """
+    green, nir, swir = read_s2(chip_id, ("B3", "B8", "B11"))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        a = np.stack([(green - nir) / (green + nir), (green - swir) / (green + swir)])
+    return np.nan_to_num(a, nan=0.0, posinf=0.0, neginf=0.0)    # S2 no-data is 0, so 0/0 off-swath
+
+def chip_input(chip_id, arm, mean, std):
+    """Model input (C, H, W) and target labels (H, W) for one chip.
+
+    `arm` from `ARMS`; `C = 4 if arm == "s1+s2" else 2`.
+    """
+    if arm not in ARMS:
+        raise ValueError(f"unknown arm {arm!r}; expected one of {ARMS}")
+    x, y, _ = preprocess(load_chip(chip_id), mean, std)
+    if arm == "s1":
+        return x, y
+    s2 = water_indices(chip_id)
+    return (s2 if arm == "s2" else np.concatenate([x, s2])), y
+
+def cloud_mask(chip_id, fraction, shape=(512, 512), sigma=24):
+    """Simulated cloud occlusion over `fraction` of the chip. `True` for covered pixels.
+    
+    Seeded according to `chip_id` so the same chip always gets the same mask.
+    """
+    if fraction <= 0:
+        return np.zeros(shape, bool)
+    if fraction >= 1:
+        return np.ones(shape, bool)
+    rng = np.random.default_rng(crc32(chip_id.encode()))
+    field = gaussian_filter(rng.standard_normal(shape), sigma)
+    return field < np.quantile(field, fraction)
+
+def occluded_input(chip_id, arm, fraction, mean, std):
+    """chip_input, with the optical channels (NDWI, MNDWI) hidden under clouds."""
+    x, y = chip_input(chip_id, arm, mean, std)
+    if arm != "s1" and fraction > 0:
+        x[-2:, cloud_mask(chip_id, fraction)] = 0.0     # the last two channels are always S2
+    return x, y
 
 def read_split(splitname):
     """Chip IDs listed in one Sen1Floods11 split CSV."""

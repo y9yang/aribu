@@ -9,7 +9,7 @@ for _var, _sub in (("GDAL_DATA", "Library/share/gdal"), ("PROJ_DATA", "Library/s
 __all__ = [
     "REPO_ROOT", "DATA_DIR", "RAW_DIR", "SPLIT_DIR",
     "RESULTS_DIR", "DEMO_DIR", "EXTERNAL_DIR", "MODELS_DIR",
-    "S1_DIR", "LABEL_DIR", "OTSU_DIR", "METADATA_PATH",
+    "S1_DIR", "S2_DIR", "LABEL_DIR", "OTSU_DIR", "METADATA_PATH",
 ]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +25,7 @@ EXTERNAL_DIR = DATA_DIR / "external"
 MODELS_DIR   = REPO_ROOT / "models"
 
 S1_DIR    = RAW_DIR / "S1Hand"
+S2_DIR    = RAW_DIR / "S2Hand"
 LABEL_DIR = RAW_DIR / "LabelHand"
 OTSU_DIR  = RAW_DIR / "S1OtsuLabelHand"
 
