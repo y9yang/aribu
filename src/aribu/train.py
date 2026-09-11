@@ -4,7 +4,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
-from tqdm.auto import tqdm
+from tqdm import tqdm
 from .dataset import IGNORE_INDEX, LABEL_WATER, chip_input
 from .metrics import confusion, metrics_from_counts
 from .model import AMP, DEVICE

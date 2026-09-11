@@ -1,7 +1,7 @@
 import numpy as np
 import segmentation_models_pytorch as smp
 import torch
-from tqdm.auto import tqdm
+from tqdm import tqdm
 from .dataset import LABEL_WATER, load_chip, occluded_input, valid_mask
 from .metrics import confusion, metrics_from_counts
 
