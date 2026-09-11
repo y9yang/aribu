@@ -14,12 +14,12 @@ LABEL_CMAP.set_bad("0.85")   # masked (no-data) pixels -> light grey
 LABEL_NAMES = {LABEL_NODATA: "no data", LABEL_LAND: "land", LABEL_WATER: "water"}
 
 ERROR_COLOURS = np.array([
-    [0.93, 0.93, 0.93],     # 0 correct land   (true negative)
-    [0.16, 0.44, 0.71],     # 1 correct water  (true positive)
-    [0.99, 0.75, 0.20],     # 2 false alarm    (predicted water, was land)
-    [0.84, 0.19, 0.15],     # 3 missed flood   (was water, predicted land)
-    [1.00, 1.00, 1.00],     # 4 no data
-])
+    [247, 251, 255],     # 0 correct land   (true negative)
+    [  8,  48, 107],     # 1 correct water  (true positive)
+    [253, 191,  51],     # 2 false alarm    (predicted water, was land)
+    [214,  48,  38],     # 3 missed flood   (was water, predicted land)
+    [217, 217, 217],     # 4 no data
+]) / 255
 
 def percentile_limits(band, low=2, high=98):
     """
