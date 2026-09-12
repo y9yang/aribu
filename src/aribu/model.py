@@ -5,7 +5,7 @@ from tqdm import tqdm
 from .dataset import LABEL_WATER, load_chip, occluded_input, valid_mask
 from .metrics import confusion, metrics_from_counts
 
-__all__ = ["DEVICE", "AMP", "ENCODER", "build_unet", "chip_prob", "make_predictor", "micro_iou"]
+__all__ = ["DEVICE", "AMP", "ENCODER", "build_unet", "load_checkpoint", "chip_prob", "make_predictor", "micro_iou"]
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 AMP = dict(device_type=DEVICE, dtype=torch.float16, enabled=DEVICE == "cuda")
@@ -14,6 +14,16 @@ ENCODER = "resnet34"
 def build_unet(in_channels):
     """Build an `smp.Unet` with ImageNet-pretrained ResNet-34 encoder."""
     return smp.Unet(ENCODER, encoder_weights="imagenet", in_channels=in_channels, classes=1)
+
+def load_checkpoint(path):
+    """Rebuild a frozen U-Net in eval mode on DEVICE.
+
+    Returns (model, checkpoint); the checkpoint holds arm, threshold and normalisation.
+    """
+    ckpt = torch.load(path, map_location="cpu", weights_only=True)
+    model = smp.Unet(ENCODER, encoder_weights=None, in_channels=ckpt["in_channels"], classes=1)
+    model.load_state_dict({k: v.float() for k, v in ckpt["state_dict"].items()})
+    return model.to(DEVICE).eval(), ckpt
 
 @torch.inference_mode()
 def chip_prob(model, arm, chip_id, mean, std, fraction=0.0):
