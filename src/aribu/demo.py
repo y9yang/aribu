@@ -28,7 +28,7 @@ __all__ = ["EVENTS", "MODELS", "CACHE_DIR", "event_chips", "build_event", "main"
 EVENTS = ("Nigeria", "Sri-Lanka", "Bolivia", "Somalia", "Pakistan")
 MODELS = {"radar": ("Radar only", "radar-only.pt", "radar-only (s1)"),
           "fusion": ("Radar + optical", "fusion.pt", "fusion (s1+s2)")}   # key: (label, checkpoint, unet.json name)
-CACHE_DIR = DATA_DIR / "prototype-cache"
+CACHE_DIR = DATA_DIR / "cache"
 WORLDPOP = "https://data.worldpop.org/GIS/Population/Global_2000_2020/{year}/{iso}/{iso_lower}_ppp_{year}.tif"
 GEOBOUNDARIES = "https://www.geoboundaries.org/api/current/gbOpen/{iso}/ADM2/"
 
