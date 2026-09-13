@@ -15,15 +15,15 @@ from PIL import Image
 from rasterio.transform import array_bounds
 from rasterio.windows import Window
 from tqdm import tqdm
-from .dataset import LABEL_WATER, load_chip, read_split, valid_mask
+from .dataset import LABEL_WATER, load_chip, read_split, valid_mask, water_indices
 from .exposure import districts_on_grid, pixel_area_m2, population_on_grid
 from .metrics import confusion, metrics_from_counts
 from .model import chip_prob, load_checkpoint
 from .paths import DATA_DIR, DEMO_DIR, METADATA_PATH, MODELS_DIR, RAW_DIR, RESULTS_DIR
 from .report import write_json
-from .viz import percentile_limits, true_colour
+from .viz import INDEX_CMAPS, percentile_limits, true_colour
 
-__all__ = ["EVENTS", "MODELS", "CACHE_DIR", "event_chips", "build_event", "main"]
+__all__ = ["EVENTS", "MODELS", "CACHE_DIR", "SWAPS", "event_chips", "build_event", "main"]
 
 EVENTS = ("Nigeria", "Sri-Lanka", "Bolivia", "Somalia", "Pakistan")
 MODELS = {"radar": ("Radar only", "radar-only.pt", "radar-only (s1)"),
@@ -31,6 +31,11 @@ MODELS = {"radar": ("Radar only", "radar-only.pt", "radar-only (s1)"),
 CACHE_DIR = DATA_DIR / "cache"
 WORLDPOP = "https://data.worldpop.org/GIS/Population/Global_2000_2020/{year}/{iso}/{iso_lower}_ppp_{year}.tif"
 GEOBOUNDARIES = "https://www.geoboundaries.org/api/current/gbOpen/{iso}/ADM2/"
+# test chip -> validation chip, dropping big no-data patches, low fusion IoU, or a chip that is all water
+SWAPS = {"Nigeria_417184": "Nigeria_1095404", "Somalia_166342": "Somalia_12849",
+         "Pakistan_664885": "Pakistan_94095", "Pakistan_528249": "Pakistan_210595",
+         "Sri-Lanka_534068": "Sri-Lanka_612594", "Sri-Lanka_1049830": "Sri-Lanka_321316",
+         "Sri-Lanka_117737": "Sri-Lanka_236030"}
 
 def _download(url, path):
     """Fetch `url` to `path` once."""
@@ -42,9 +47,9 @@ def _download(url, path):
     return path
 
 def event_chips(event):
-    """Held-out chip ids for one event: the Bolivia split, or the event's test chips."""
+    """Held-out chip ids for one event: the Bolivia split, or the event's test chips with SWAPS applied."""
     split = "bolivia" if event == "Bolivia" else "test"
-    return [c for c in read_split(split) if c.split("_")[0] == event]
+    return [SWAPS.get(c, c) for c in read_split(split) if c.split("_")[0] == event]
 
 def _population_window(path, bounds, pad=0.002):
     """WorldPop counts around `bounds`, padded, as (array, transform)."""
@@ -63,8 +68,14 @@ def _display_vh(vh):
     grey = np.clip((vh - lo) / (hi - lo), 0, 1) * 255
     return np.where(np.isfinite(vh), grey, 217).astype(np.uint8)
 
+def _display_mndwi(chip_id):
+    """MNDWI coloured as in error_panel, as RGB uint8."""
+    arr = water_indices(chip_id)[1]
+    lim = max(np.percentile(np.abs(arr), 98), 1e-6)
+    return (INDEX_CMAPS["MNDWI"](np.clip((arr + lim) / (2 * lim), 0, 1))[..., :3] * 255).astype(np.uint8)
+
 def build_event(event, props, models):
-    """Write data/demo/<event>/: chips.npz, districts.geojson and two JPEGs per chip.
+    """Write data/demo/<event>/: chips.npz, districts.geojson and three JPEGs per chip.
 
     Chips are stored best fusion IoU first. Returns the event's manifest entry.
     """
@@ -100,6 +111,7 @@ def build_event(event, props, models):
             arrays[f"prob_{name}"].append(np.round(p * 255).astype(np.uint8))
 
         Image.fromarray(_display_vh(c.vh)).save(out / f"{chip_id}_vh.jpg", quality=90)
+        Image.fromarray(_display_mndwi(chip_id)).save(out / f"{chip_id}_mndwi.jpg", quality=90)
         Image.fromarray((true_colour(chip_id) * 255).astype(np.uint8)).save(out / f"{chip_id}_rgb.jpg", quality=90)
         arrays["ids"].append(chip_id)
         arrays["bounds"].append(b)
