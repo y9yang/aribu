@@ -1,6 +1,6 @@
 """Build the Streamlit demo data.
 
-Both models' water probabilities on held-out chips, with population and districts on the same
+Both models' water probabilities on every chip of each event, with population and districts on the same
 10 m grid. Run once, locally, on the GPU:
 
     python -m aribu.demo
@@ -15,7 +15,7 @@ from PIL import Image
 from rasterio.transform import array_bounds
 from rasterio.windows import Window
 from tqdm import tqdm
-from .dataset import LABEL_WATER, load_chip, read_split, valid_mask, water_indices
+from .dataset import LABEL_WATER, SPLIT_ORDER, load_chip, read_split, valid_mask, water_indices
 from .exposure import districts_on_grid, pixel_area_m2, population_on_grid
 from .metrics import confusion, metrics_from_counts
 from .model import chip_prob, load_checkpoint
@@ -75,9 +75,10 @@ def _display_mndwi(chip_id):
     return (INDEX_CMAPS["MNDWI"](np.clip((arr + lim) / (2 * lim), 0, 1))[..., :3] * 255).astype(np.uint8)
 
 def build_event(event, props, models):
-    """Write data/demo/<event>/: chips.npz, districts.geojson and three JPEGs per chip.
+    """Write data/demo/<event>/: chips.npz, districts.geojson and three JPEGs per held-out chip.
 
-    Chips are stored best fusion IoU first. Returns the event's manifest entry.
+    chips.npz holds the event's chips from all splits, for the exposure. `held_out` marks the ones
+    the chip viewer shows, stored first, best fusion IoU first. Returns the event's manifest entry.
     """
     year, iso = props["s1_date"][:4], props["ISO_CC"]
     pop_path = _download(WORLDPOP.format(year=year, iso=iso, iso_lower=iso.lower()),
@@ -87,10 +88,11 @@ def build_event(event, props, models):
 
     out = DEMO_DIR / event
     out.mkdir(parents=True, exist_ok=True)
-    keys = ("ids", "bounds", "px_area", "label", "valid", "perm", "pop", "district", *(f"prob_{m}" for m in models))
+    keys = ("ids", "held_out", "bounds", "px_area", "label", "valid", "perm", "pop", "district", *(f"prob_{m}" for m in models))
     arrays = {k: [] for k in keys}
+    held_out = set(event_chips(event))
 
-    for chip_id in tqdm(event_chips(event), desc=event):
+    for chip_id in tqdm([c for s in SPLIT_ORDER for c in read_split(s) if c.split("_")[0] == event], desc=event):
         c = load_chip(chip_id)
         valid = valid_mask(c)
         if not valid.any():
@@ -110,17 +112,19 @@ def build_event(event, props, models):
             p = chip_prob(model, ckpt["arm"], chip_id, norm["mean"], norm["std"])
             arrays[f"prob_{name}"].append(np.round(p * 255).astype(np.uint8))
 
-        Image.fromarray(_display_vh(c.vh)).save(out / f"{chip_id}_vh.jpg", quality=90)
-        Image.fromarray(_display_mndwi(chip_id)).save(out / f"{chip_id}_mndwi.jpg", quality=90)
-        Image.fromarray((true_colour(chip_id) * 255).astype(np.uint8)).save(out / f"{chip_id}_rgb.jpg", quality=90)
+        if chip_id in held_out:
+            Image.fromarray(_display_vh(c.vh)).save(out / f"{chip_id}_vh.jpg", quality=90)
+            Image.fromarray(_display_mndwi(chip_id)).save(out / f"{chip_id}_mndwi.jpg", quality=90)
+            Image.fromarray((true_colour(chip_id) * 255).astype(np.uint8)).save(out / f"{chip_id}_rgb.jpg", quality=90)
         arrays["ids"].append(chip_id)
+        arrays["held_out"].append(chip_id in held_out)
         arrays["bounds"].append(b)
         arrays["px_area"].append(pixel_area_m2(c.transform, shape[0]))
 
     stacked = {k: np.stack(v) for k, v in arrays.items()}
     iou = [metrics_from_counts(confusion(prob > models["fusion"][1]["threshold"] * 255, label == LABEL_WATER, valid))["iou"]
            for prob, label, valid in zip(stacked["prob_fusion"], stacked["label"], stacked["valid"])]
-    order = np.argsort(-np.array(iou))          # NaN (no water in label or prediction) sorts last
+    order = np.lexsort((-np.array(iou), ~stacked["held_out"]))  # held-out first; NaN (no water in label or prediction) sorts last
     np.savez_compressed(out / "chips.npz", **{k: v[order] for k, v in stacked.items()})  # pyright: ignore[reportArgumentType]
 
     present = np.unique(stacked["district"])
