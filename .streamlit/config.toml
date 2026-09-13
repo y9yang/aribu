@@ -1,0 +1,15 @@
+[theme]
+base = "light"
+primaryColor = "#2F6F8F"
+backgroundColor = "#FAFAF7"
+secondaryBackgroundColor = "#F1F1EC"
+textColor = "#1F2A33"
+borderColor = "#E3E3DC"
+baseRadius = "small"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+headingFont = "Newsreader:https://fonts.googleapis.com/css2?family=Newsreader:wght@400;500;600&display=swap"
+headingFontWeights = [600, 600, 500, 500, 500, 500]
+chartCategoricalColors = ["#2F6F8F", "#C08A3E", "#8A9BA8"]
+
+[client]
+toolbarMode = "minimal"
