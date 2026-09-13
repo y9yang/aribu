@@ -45,8 +45,8 @@ def shifted_cmap(name, midpoint, power=0.5, n=256):
     y[~left] = 0.5 + 0.5 * ((x[~left] - midpoint) / (1 - midpoint)) ** power   # -> [0.5, 1]
     return LinearSegmentedColormap.from_list(f"{name}_shifted", base(y), N=n)
 
-INDEX_CMAPS = {"NDWI": shifted_cmap("PuOr", midpoint=0.40, power=0.80),
-               "MNDWI": shifted_cmap("PiYG", midpoint=0.65, power=0.90)}
+INDEX_CMAPS = {"NDWI": shifted_cmap("PiYG", midpoint=0.40, power=0.80),
+               "MNDWI": shifted_cmap("PuOr", midpoint=0.65, power=0.90)}
 
 def true_colour(chip_id, low=2, high=98):
     """A displayable (H, W, 3) image taking values between 0 and 1 from Sentinel-2 in RGB = (B4, B3, B2).
