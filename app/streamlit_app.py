@@ -132,6 +132,7 @@ chips, _ = load_event(event)
 i = st.pagination(len(chips["ids"]), key=f"chip_{event}") - 1
 chip_id, valid, truth = chips["ids"][i], chips["valid"][i], chips["label"][i] == LABEL_WATER
 inputs = [(Image.open(DEMO_DIR / event / f"{chip_id}_vh.jpg"), "Radar (Sentinel-1, VH)"), # pyright: ignore[reportOperatorIssue]
+          (Image.open(DEMO_DIR / event / f"{chip_id}_mndwi.jpg"), "Water index (Sentinel-2, MNDWI)"), # pyright: ignore[reportOperatorIssue]
           (Image.open(DEMO_DIR / event / f"{chip_id}_rgb.jpg"), "Optical (Sentinel-2)")] # pyright: ignore[reportOperatorIssue]
 maps = [(error_image(truth, truth, valid), "Hand label")]
 for name, m in models.items():
@@ -174,7 +175,7 @@ st.download_button("Download table (CSV)", table.to_csv(index=False),
 
 with st.expander("How this is computed"):
     st.markdown(f"""
-- **Mapped area only**: {len(chips['ids'])} squares of 5 km from the {'Bolivia hold-out' if info['split'] == 'bolivia' else 'test split'}, which the models never trained on. They are a small sample picked by the dataset authors, not full coverage of the flood, so figures are not scaled up to the whole event or to whole districts.
+- **Mapped area only**: {len(chips['ids'])} squares of 5 km from the {'Bolivia hold-out' if info['split'] == 'bolivia' else 'test and validation splits'}, which the models never trained on. They are a small sample, not full coverage of the flood, so figures are not scaled up to the whole event or to whole districts.
 - **Flood water**: pixels the model scores above the threshold, minus permanent water (JRC). Only pixels with a valid radar reading and a hand label count, so both columns compare like with like.
 - **People**: WorldPop {info['worldpop_year']} counts per ~100 m cell, spread evenly over the 10 m pixels inside it.
 - **Districts**: geoBoundaries ADM2 ({info['boundaries_license']}).
