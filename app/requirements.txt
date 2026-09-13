@@ -1,0 +1,8 @@
+streamlit==1.62.0
+numpy
+pandas
+scipy
+matplotlib
+rasterio
+pillow
+-e .
