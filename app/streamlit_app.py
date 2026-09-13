@@ -43,20 +43,17 @@ def exposure_table(event, model, threshold):
     chips, districts = load_event(event)
     flooded, truth = masks(chips, model, threshold)
     n = int(chips["district"].max())
-    people, people_label, flooded_m2, mapped_m2 = (np.zeros(n + 1) for _ in range(4))
+    people, people_label, flooded_m2 = (np.zeros(n + 1) for _ in range(3))
     for i, area in enumerate(chips["px_area"]):
         d, pop = chips["district"][i], chips["pop"][i]
         p, px = tally(flooded[i], d, pop, n)
         people += p
         flooded_m2 += px * area
         people_label += tally(truth[i], d, pop, n)[0]
-        mapped_m2 += tally(chips["valid"][i], d, pop, n)[1] * area
     rows = [{"District": f["properties"]["name"],
              "People · model": round(people[f["properties"]["id"]], -1), # pyright: ignore[reportCallIssue, reportArgumentType]
              "People · hand label": round(people_label[f["properties"]["id"]], -1), # pyright: ignore[reportCallIssue, reportArgumentType]
-             "Flooded km²": flooded_m2[f["properties"]["id"]] / 1e6,
-             "Mapped km²": mapped_m2[f["properties"]["id"]] / 1e6,
-             "Share mapped": mapped_m2[f["properties"]["id"]] / 1e6 / f["properties"]["area_km2"]}
+             "Flooded km²": flooded_m2[f["properties"]["id"]] / 1e6}
             for f in districts["features"]]
     return pd.DataFrame(rows).sort_values("People · model", ascending=False)
 
@@ -91,8 +88,11 @@ def flood_map(event, model, threshold, table):
         *(pdk.Layer("BitmapLayer", image=pdk.types.String(url), bounds=list(b)) for url, b in zip(overlays(event, model, threshold), chips["bounds"])), # pyright: ignore[reportAttributeAccessIssue]
         pdk.Layer("PathLayer", squares, get_path="path", get_color=[31, 42, 51, 110], width_min_pixels=1),
     ]
-    corners = [[x, y] for l, b, r, t in chips["bounds"] for x, y in ((l, b), (r, t))]
-    view = pdk.data_utils.compute_view(corners, view_proportion=1)          # pyright: ignore[reportAttributeAccessIssue]
+    # Fit the chips into the map, 704 × 520 px in the centred layout, with 20 px to spare on each side.
+    # On a Mercator map the world is 512 px wide at zoom 0, and latitudes stretch by 1 / cos(latitude).
+    l, b, r, t = *chips["bounds"][:, :2].min(0), *chips["bounds"][:, 2:].max(0)
+    zoom = np.log2(min(664 / (r - l), 480 * np.cos(np.radians((b + t) / 2)) / (t - b)) * 360 / 512)
+    view = pdk.ViewState(longitude=(l + r) / 2, latitude=(b + t) / 2, zoom=zoom)
     st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view, map_style=None, # pyright: ignore[reportArgumentType]
                              tooltip={"text": "{name}\n{people}"}), height=520) # pyright: ignore[reportArgumentType]
 
@@ -140,7 +140,7 @@ event = event_picker(events, "event", "event_exposure",
 info = events[event]
 chips, _ = load_event(event)
 
-i = st.pagination(len(chips["ids"]), key=f"chip_{event}") - 1
+i = st.pagination(int(chips["held_out"].sum()), key=f"chip_{event}") - 1
 chip_id, valid, truth = chips["ids"][i], chips["valid"][i], chips["label"][i] == LABEL_WATER
 inputs = [(Image.open(DEMO_DIR / event / f"{chip_id}_vh.jpg"), "Radar · Sentinel-1 VH"), # pyright: ignore[reportOperatorIssue]
           (Image.open(DEMO_DIR / event / f"{chip_id}_mndwi.jpg"), "Water index · Sentinel-2 MNDWI"), # pyright: ignore[reportOperatorIssue]
@@ -168,28 +168,27 @@ threshold = right.slider("Decision threshold", 0.05, 0.95, models[model]["thresh
 table = exposure_table(event, model, threshold)
 mapped_km2 = sum(v.sum() * area for v, area in zip(chips["valid"], chips["px_area"])) / 1e6
 
-st.caption(f"Note that these numbers only cover the {len(chips['ids'])} chips we mapped for this event, "
-           f"{mapped_km2:,.0f} km² in total, which is a small part of the whole flood.")
+st.caption(f"Note that these numbers cover all {len(chips['ids'])} hand-labelled chips of this event in Sen1Floods11, "
+           f"{mapped_km2:,.0f} km² in total, which is still a small part of the whole flood.")
 a, b, c = st.columns(3)
 a.metric("Exposed people · model", f"{table['People · model'].sum():,.0f}")
 b.metric("Exposed people · hand label", f"{table['People · hand label'].sum():,.0f}")
 c.metric("Flooded area", f"{table['Flooded km²'].sum():,.1f} km²")
 
 flood_map(event, model, threshold, table)
-legend([(FLOOD_RGBA[:3], "flood water"), (PERM_RGBA[:3], "permanent water"), ((31, 42, 51), "mapped area")])
+legend([(FLOOD_RGBA[:3], "flood water"), (PERM_RGBA[:3], "permanent water")])
 
 st.dataframe(table, hide_index=True, width="stretch", column_config={
+    "District": st.column_config.TextColumn(width="medium"),
     "People · model": st.column_config.NumberColumn(format="localized"),
     "People · hand label": st.column_config.NumberColumn(format="localized"),
-    "Flooded km²": st.column_config.NumberColumn(format="%.2f"),
-    "Mapped km²": st.column_config.NumberColumn(format="%.1f"),
-    "Share mapped": st.column_config.NumberColumn(format="percent")})
+    "Flooded km²": st.column_config.NumberColumn(format="%.2f")})
 st.download_button("Download table as CSV", table.to_csv(index=False),
                    file_name=f"aribu-{event.lower()}-{model}-exposure.csv", mime="text/csv") # pyright: ignore[reportOptionalMemberAccess]
 
 with st.expander("How we computed this"):
     st.markdown(f"""
-- **Mapped area**: we only use the {len(chips['ids'])} chips, each 5 km × 5 km, from the {'Bolivia hold-out split' if info['split'] == 'bolivia' else 'test and validation splits'}, which the models never saw during training. Since they cover only a small part of the flood, we do **not** scale the numbers up to the whole event or to entire districts.
+- **Mapped area**: we use all {len(chips['ids'])} hand-labelled chips of this event, each 5 km × 5 km, {'from the Bolivia hold-out split, which the models never saw during training' if info['split'] == 'bolivia' else 'from the training, validation and test splits. Note that the models learned from the training chips, so on those the model numbers are closer to the hand label than they would be on a new flood'}. Since they cover only a small part of the flood, we do **not** scale the numbers up to the whole event or to entire districts.
 - **Flood water**: pixels where the model's probability is above the threshold, excluding permanent water such as rivers and lakes, which we take from JRC Global Surface Water. We only count pixels with both a valid radar reading and a hand label, so that the model and hand label columns can be compared fairly.
 - **People**: WorldPop {info['worldpop_year']} provides a head count for each grid cell of about 100 m, and we distribute it evenly over the 10 m pixels inside that cell.
 - **Districts**: second-level administrative areas, known as ADM2, from geoBoundaries. License: {info['boundaries_license'].split(' (')[0]}.
