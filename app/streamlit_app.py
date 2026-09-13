@@ -17,6 +17,12 @@ COLOURS = (ERROR_COLOURS * 255).astype(np.uint8)
 FLOOD_RGBA, PERM_RGBA = (47, 111, 143, 230), (138, 155, 168, 150)
 
 st.set_page_config(page_title="Aribu", layout="centered")
+# Captions default to 60% of the text colour, too faint on this background. Informative ones get 75%,
+# the raven story and the credits (in the "quiet" containers) a step lighter at 65%.
+st.html("""<style>
+[data-testid="stCaptionContainer"] { opacity: .75 }
+[class*="st-key-quiet"] [data-testid="stCaptionContainer"] { opacity: .65 }
+</style>""")
 
 @st.cache_data
 def load_manifest():
@@ -76,7 +82,7 @@ def flood_map(event, model, threshold, table):
     shaded = {"type": "FeatureCollection", "features": [
         {**f, "properties": {**f["properties"],
                              "fill": [47, 111, 143, int(12 + 70 * np.sqrt(by_name[f["properties"]["name"]] / most))],
-                             "people": f"{by_name[f['properties']['name']]:,.0f} people exposed (mapped chips only)"}}
+                             "people": f"{by_name[f['properties']['name']]:,.0f} people exposed in the mapped chips"}}
         for f in districts["features"]]}
     squares = [{"path": [[l, b], [r, b], [r, t], [l, t], [l, b]]} for l, b, r, t in chips["bounds"]]
     layers = [
@@ -98,7 +104,8 @@ def error_image(pred, truth, valid):
 def legend(items):
     swatch = ('<span style="margin-right:1.4em;white-space:nowrap"><span style="display:inline-block;width:.7em;'
               'height:.7em;margin-right:.4em;background:rgb{}"></span>{}</span>')
-    st.markdown('<div style="font-size:.85em;opacity:.8">' + "".join(swatch.format(tuple(int(v) for v in c), name) for c, name in items)
+    # same 75% as the captions, on the text only so the swatches keep the map colours
+    st.markdown('<div style="font-size:.85em;color:color-mix(in srgb, currentColor 75%, transparent)">' + "".join(swatch.format(tuple(int(v) for v in c), name) for c, name in items)
                 + "</div>", unsafe_allow_html=True)
 
 def event_picker(events, key, other, help=None):
@@ -113,35 +120,37 @@ manifest = load_manifest()
 events, models = manifest["events"], manifest["models"]
 
 st.title("Aribu")
-st.caption("Deep learning models (U-Nets) map flood water from satellite images, then we count who lives in the flooded areas.")
-st.caption("*Aribu* is Akkadian for raven. After the flood in the Epic of Gilgamesh, Utnapishtim sent out a dove "
-           "and a swallow, and both came back. The raven never did: it had found dry land.")
+st.caption("Deep learning models (U-Nets) map floodwater from satellite imagery, and the results are used to estimate how many people live in the affected areas.")
+st.container(key="quiet_raven").caption("*Aribu* is Akkadian for raven. After the flood in the Epic of Gilgamesh, Utnapishtim sent out a dove "
+                                        "and a swallow, and both returned. The raven never did: it had found dry land.")
 
 st.header("Flood maps")
 cols = st.columns(len(models) + 1)
 for col, m in zip(cols, models.values()):
     col.metric(f"{m['label']} · IoU", f"{m['micro_iou']['test']:.2f}",
-               help=f"All test chips pooled together, at threshold {m['threshold']}. "
-                    f"On Bolivia, an event kept completely out of training: {m['micro_iou']['bolivia']:.2f}.")
-cols[-1].caption("IoU (Intersection over Union) scores the match with hand-labelled water, from 0 (no overlap) to 1 (perfect).")
+               help=f"Computed on all test chips pooled together, at threshold {m['threshold']}. "
+                    f"On Bolivia, an event withheld entirely from training: {m['micro_iou']['bolivia']:.2f}.")
+cols[-1].caption("IoU, or Intersection over Union, measures the overlap with hand-labelled water. "
+                 "It ranges from 0 for no overlap to 1 for a perfect match.")
 
-st.caption(f"A few 5 km × 5 km tiles (chips) from each of {len(events)} flood events in Sen1Floods11, our training dataset. "
-           "None were used in training, and Bolivia was left out entirely.")
+st.caption(f"We show a few 5 km × 5 km tiles, called chips, from each of {len(events)} flood events in Sen1Floods11, "
+           "our training dataset. None of these chips were used in training, and Bolivia was withheld entirely.")
 event = event_picker(events, "event", "event_exposure",
-                     help="Sorted from best to worst IoU. The chips of each event are sorted the same way.")
+                     help="Events are sorted from best to worst IoU. The chips of each event follow the same order.")
 info = events[event]
 chips, _ = load_event(event)
 
 i = st.pagination(len(chips["ids"]), key=f"chip_{event}") - 1
 chip_id, valid, truth = chips["ids"][i], chips["valid"][i], chips["label"][i] == LABEL_WATER
-inputs = [(Image.open(DEMO_DIR / event / f"{chip_id}_vh.jpg"), "Radar (Sentinel-1, VH)"), # pyright: ignore[reportOperatorIssue]
-          (Image.open(DEMO_DIR / event / f"{chip_id}_mndwi.jpg"), "Water index (Sentinel-2, MNDWI)"), # pyright: ignore[reportOperatorIssue]
-          (Image.open(DEMO_DIR / event / f"{chip_id}_rgb.jpg"), "Optical (Sentinel-2)")] # pyright: ignore[reportOperatorIssue]
-maps = [(error_image(truth, truth, valid), "Hand label")]
+inputs = [(Image.open(DEMO_DIR / event / f"{chip_id}_vh.jpg"), "Radar · Sentinel-1 VH"), # pyright: ignore[reportOperatorIssue]
+          (Image.open(DEMO_DIR / event / f"{chip_id}_mndwi.jpg"), "Water index · Sentinel-2 MNDWI"), # pyright: ignore[reportOperatorIssue]
+          (Image.open(DEMO_DIR / event / f"{chip_id}_rgb.jpg"), "Optical · Sentinel-2")] # pyright: ignore[reportOperatorIssue]
+maps = []
 for name, m in models.items():
     pred = chips[f"prob_{name}"][i] > m["threshold"] * 255
     iou = metrics_from_counts(confusion(pred, truth, valid))["iou"]
     maps.append((error_image(pred, truth, valid), f"{m['label']} · IoU {iou:.2f}" if np.isfinite(iou) else m["label"]))
+maps.append((error_image(truth, truth, valid), "Hand label"))
 for row in (inputs, maps):
     for col, (image, caption) in zip(st.columns(len(row)), row):
         col.image(image, caption=caption, width="stretch")
@@ -155,12 +164,12 @@ model = left.segmented_control("Model", list(models), default="fusion", required
                                format_func=lambda m: models[m]["label"])
 threshold = right.slider("Decision threshold", 0.05, 0.95, models[model]["threshold"], 0.05, key=f"threshold_{model}",
                          help="A pixel counts as water when the model's probability is above this value. "
-                              "Lowering it catches more water, but also gives more false alarms.")
+                              "Lowering it detects more water, but also produces more false alarms.")
 table = exposure_table(event, model, threshold)
 mapped_km2 = sum(v.sum() * area for v, area in zip(chips["valid"], chips["px_area"])) / 1e6
 
-st.caption(f"Note that these numbers only cover the {len(chips['ids'])} chips we mapped for this event "
-           f"({mapped_km2:,.0f} km²), which is just a small part of the whole flood.")
+st.caption(f"Note that these numbers only cover the {len(chips['ids'])} chips we mapped for this event, "
+           f"{mapped_km2:,.0f} km² in total, which is a small part of the whole flood.")
 a, b, c = st.columns(3)
 a.metric("Exposed people · model", f"{table['People · model'].sum():,.0f}")
 b.metric("Exposed people · hand label", f"{table['People · hand label'].sum():,.0f}")
@@ -175,18 +184,18 @@ st.dataframe(table, hide_index=True, width="stretch", column_config={
     "Flooded km²": st.column_config.NumberColumn(format="%.2f"),
     "Mapped km²": st.column_config.NumberColumn(format="%.1f"),
     "Share mapped": st.column_config.NumberColumn(format="percent")})
-st.download_button("Download table (CSV)", table.to_csv(index=False),
+st.download_button("Download table as CSV", table.to_csv(index=False),
                    file_name=f"aribu-{event.lower()}-{model}-exposure.csv", mime="text/csv") # pyright: ignore[reportOptionalMemberAccess]
 
 with st.expander("How we computed this"):
     st.markdown(f"""
-- **Mapped area**: we only use the {len(chips['ids'])} chips (5 km × 5 km each) from the {'Bolivia hold-out split' if info['split'] == 'bolivia' else 'test and validation splits'}, which the models never saw during training. They cover only a small part of the flood, so we do **not** scale the numbers up to the whole event or to whole districts.
-- **Flood water**: pixels where the model's probability is above the threshold, minus permanent water such as rivers and lakes (JRC Global Surface Water). We only count pixels that have both a valid radar reading and a hand label, so the model and hand label columns can be compared fairly.
-- **People**: WorldPop {info['worldpop_year']} gives a head count for each ~100 m grid cell, and we spread it evenly over the 10 m pixels inside that cell.
-- **Districts**: second-level administrative areas (ADM2) from geoBoundaries ({info['boundaries_license']}).
-- **Exposed vs affected**: *exposed* means living where we mapped flood water. This is not the number of people who need aid. All head counts are rounded to the nearest 10.
+- **Mapped area**: we only use the {len(chips['ids'])} chips, each 5 km × 5 km, from the {'Bolivia hold-out split' if info['split'] == 'bolivia' else 'test and validation splits'}, which the models never saw during training. Since they cover only a small part of the flood, we do **not** scale the numbers up to the whole event or to entire districts.
+- **Flood water**: pixels where the model's probability is above the threshold, excluding permanent water such as rivers and lakes, which we take from JRC Global Surface Water. We only count pixels with both a valid radar reading and a hand label, so that the model and hand label columns can be compared fairly.
+- **People**: WorldPop {info['worldpop_year']} provides a head count for each grid cell of about 100 m, and we distribute it evenly over the 10 m pixels inside that cell.
+- **Districts**: second-level administrative areas, known as ADM2, from geoBoundaries. License: {info['boundaries_license'].split(' (')[0]}.
+- **Exposed versus affected**: *exposed* means living where we mapped flood water, which is not the same as needing aid. All head counts are rounded to the nearest 10.
 """)
 
 st.divider()
-st.caption("Data: Sen1Floods11 (Bonafilia et al., 2020) · WorldPop · geoBoundaries · JRC Global Surface Water. "
-           "The predictions were computed offline (the app does not run the models itself).")
+st.container(key="quiet_credits").caption("Data: Sen1Floods11 by Bonafilia et al., 2020 · WorldPop · geoBoundaries · JRC Global Surface Water. "
+                                          "The predictions were computed in advance: the app does not run the models itself.")
