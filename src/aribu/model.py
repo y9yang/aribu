@@ -1,4 +1,6 @@
 import numpy as np
+# pandas must load before torchvision (pulled in by smp): the reverse order crashes Python on Windows (0xC0000374)
+import pandas  # noqa: F401
 import segmentation_models_pytorch as smp
 import torch
 from tqdm import tqdm
