@@ -4,20 +4,22 @@ channels:
 dependencies:
   - python=3.14
   - pytorch-gpu
+  # not imported; required by segmentation-models-pytorch, pinned to conda so pip does not install its own
   - torchvision
   - numpy
   - pandas
   - rasterio
   - geopandas
-  - scikit-learn
+  - shapely
   - scikit-image
   - scipy
   - matplotlib
+  - pillow
   - tqdm
   - ipykernel
   - ipywidgets
-  - jupyterlab
   - streamlit
+  - pydeck
   - pytest
   - pip
   - pip:
