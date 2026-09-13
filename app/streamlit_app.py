@@ -34,34 +34,30 @@ def load_event(event):
         chips = {k: z[k] for k in z.files}
     return chips, json.loads((DEMO_DIR / event / "districts.geojson").read_text(encoding="utf-8"))
 
-def masks(chips, model, threshold):
-    """Flood water from the model and from the hand label, both without permanent water."""
-    usable = chips["valid"] & ~chips["perm"]
-    return (chips[f"prob_{model}"] > threshold * 255) & usable, (chips["label"] == LABEL_WATER) & usable
+def flood_mask(chips, model, threshold):
+    """Flood water from the model, without permanent water."""
+    return (chips[f"prob_{model}"] > threshold * 255) & chips["valid"] & ~chips["perm"]
 
 def exposure_table(event, model, threshold):
     chips, districts = load_event(event)
-    flooded, truth = masks(chips, model, threshold)
+    flooded = flood_mask(chips, model, threshold)
     n = int(chips["district"].max())
-    people, people_label, flooded_m2 = (np.zeros(n + 1) for _ in range(3))
+    people, flooded_m2 = np.zeros(n + 1), np.zeros(n + 1)
     for i, area in enumerate(chips["px_area"]):
-        d, pop = chips["district"][i], chips["pop"][i]
-        p, px = tally(flooded[i], d, pop, n)
+        p, px = tally(flooded[i], chips["district"][i], chips["pop"][i], n)
         people += p
         flooded_m2 += px * area
-        people_label += tally(truth[i], d, pop, n)[0]
     rows = [{"District": f["properties"]["name"],
-             "People · model": round(people[f["properties"]["id"]], -1), # pyright: ignore[reportCallIssue, reportArgumentType]
-             "People · hand label": round(people_label[f["properties"]["id"]], -1), # pyright: ignore[reportCallIssue, reportArgumentType]
+             "Exposed people": round(people[f["properties"]["id"]], -1), # pyright: ignore[reportCallIssue, reportArgumentType]
              "Flooded km²": flooded_m2[f["properties"]["id"]] / 1e6}
             for f in districts["features"]]
-    return pd.DataFrame(rows).sort_values("People · model", ascending=False)
+    return pd.DataFrame(rows).sort_values("Exposed people", ascending=False)
 
 @st.cache_data
 def overlays(event, model, threshold):
     """One transparent PNG per chip, as data URLs: flood water blue, permanent water grey."""
     chips, _ = load_event(event)
-    flooded, _ = masks(chips, model, threshold)
+    flooded = flood_mask(chips, model, threshold)
     urls = []
     for f, perm in zip(flooded, chips["perm"]):
         rgba = np.zeros((*f.shape, 4), np.uint8)
@@ -74,8 +70,8 @@ def overlays(event, model, threshold):
 
 def flood_map(event, model, threshold, table):
     chips, districts = load_event(event)
-    most = max(table["People · model"].max(), 1)
-    by_name = table.set_index("District")["People · model"]
+    most = max(table["Exposed people"].max(), 1)
+    by_name = table.set_index("District")["Exposed people"]
     shaded = {"type": "FeatureCollection", "features": [
         {**f, "properties": {**f["properties"],
                              "fill": [47, 111, 143, int(12 + 70 * np.sqrt(by_name[f["properties"]["name"]] / most))],
@@ -125,13 +121,13 @@ st.container(key="quiet_raven").caption("*Aribu* is Akkadian for raven. After th
                                         "and a swallow, and both returned. The raven never did: it had found dry land.")
 
 st.header("Flood maps")
-cols = st.columns(len(models) + 1)
-for col, m in zip(cols, models.values()):
-    col.metric(f"{m['label']} · IoU", f"{m['micro_iou']['test']:.2f}",
-               help=f"Computed on all test chips pooled together, at threshold {m['threshold']}. "
-                    f"On Bolivia, an event withheld entirely from training: {m['micro_iou']['bolivia']:.2f}.")
-cols[-1].caption("IoU, or Intersection over Union, measures the overlap with hand-labelled water. "
-                 "It ranges from 0 for no overlap to 1 for a perfect match.")
+with st.container(border=True):
+    for col, m in zip(st.columns(len(models)), models.values()):
+        col.metric(f"{m['label']} · IoU", f"{m['micro_iou']['test']:.2f}",
+                   help=f"Computed on all test chips pooled together, at threshold {m['threshold']}. "
+                        f"On Bolivia, an event withheld entirely from training: {m['micro_iou']['bolivia']:.2f}.")
+    st.caption("IoU, or Intersection over Union, measures the overlap with hand-labelled water. "
+               "It ranges from 0 for no overlap to 1 for a perfect match.")
 
 st.caption(f"We show a few 5 km × 5 km tiles, called chips, from each of {len(events)} flood events in Sen1Floods11, "
            "our training dataset. None of these chips were used in training, and Bolivia was withheld entirely.")
@@ -168,20 +164,20 @@ threshold = right.slider("Decision threshold", 0.05, 0.95, models[model]["thresh
 table = exposure_table(event, model, threshold)
 mapped_km2 = sum(v.sum() * area for v, area in zip(chips["valid"], chips["px_area"])) / 1e6
 
-st.caption(f"Note that these numbers cover all {len(chips['ids'])} hand-labelled chips of this event in Sen1Floods11, "
-           f"{mapped_km2:,.0f} km² in total, which is still a small part of the whole flood.")
-a, b, c = st.columns(3)
-a.metric("Exposed people · model", f"{table['People · model'].sum():,.0f}")
-b.metric("Exposed people · hand label", f"{table['People · hand label'].sum():,.0f}")
-c.metric("Flooded area", f"{table['Flooded km²'].sum():,.1f} km²")
+# One card for the results, so they stand apart from the controls above, with the note that qualifies them
+with st.container(border=True):
+    a, b = st.columns(2)
+    a.metric("Exposed people", f"{table['Exposed people'].sum():,.0f}")
+    b.metric("Flooded area", f"{table['Flooded km²'].sum():,.1f} km²")
+    st.caption(f"Note that these numbers cover all {len(chips['ids'])} hand-labelled chips of this event in Sen1Floods11, "
+               f"{mapped_km2:,.0f} km² in total, which is still a small part of the whole flood.")
 
 flood_map(event, model, threshold, table)
 legend([(FLOOD_RGBA[:3], "flood water"), (PERM_RGBA[:3], "permanent water")])
 
 st.dataframe(table, hide_index=True, width="stretch", column_config={
     "District": st.column_config.TextColumn(width="medium"),
-    "People · model": st.column_config.NumberColumn(format="localized"),
-    "People · hand label": st.column_config.NumberColumn(format="localized"),
+    "Exposed people": st.column_config.NumberColumn(format="localized"),
     "Flooded km²": st.column_config.NumberColumn(format="%.2f")})
 st.download_button("Download table as CSV", table.to_csv(index=False),
                    file_name=f"aribu-{event.lower()}-{model}-exposure.csv", mime="text/csv") # pyright: ignore[reportOptionalMemberAccess]
@@ -189,7 +185,7 @@ st.download_button("Download table as CSV", table.to_csv(index=False),
 with st.expander("How we computed this"):
     st.markdown(f"""
 - **Mapped area**: we use all {len(chips['ids'])} hand-labelled chips of this event, each 5 km × 5 km, {'from the Bolivia hold-out split, which the models never saw during training' if info['split'] == 'bolivia' else 'from the training, validation and test splits. Note that the models learned from the training chips, so on those the model numbers are closer to the hand label than they would be on a new flood'}. Since they cover only a small part of the flood, we do **not** scale the numbers up to the whole event or to entire districts.
-- **Flood water**: pixels where the model's probability is above the threshold, excluding permanent water such as rivers and lakes, which we take from JRC Global Surface Water. We only count pixels with both a valid radar reading and a hand label, so that the model and hand label columns can be compared fairly.
+- **Flood water**: pixels where the model's probability is above the threshold, excluding permanent water such as rivers and lakes, which we take from JRC Global Surface Water. We only count pixels with both a valid radar reading and a hand label.
 - **People**: WorldPop {info['worldpop_year']} provides a head count for each grid cell of about 100 m, and we distribute it evenly over the 10 m pixels inside that cell.
 - **Districts**: second-level administrative areas, known as ADM2, from geoBoundaries. License: {info['boundaries_license'].split(' (')[0]}.
 - **Exposed versus affected**: *exposed* means living where we mapped flood water, which is not the same as needing aid. All head counts are rounded to the nearest 10.
