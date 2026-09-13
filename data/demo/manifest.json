@@ -1,0 +1,57 @@
+{
+  "models": {
+    "radar": {
+      "label": "Radar only",
+      "threshold": 0.4,
+      "micro_iou": {
+        "test": 0.6811741688853507,
+        "bolivia": 0.7209181032226292
+      }
+    },
+    "fusion": {
+      "label": "Radar + optical",
+      "threshold": 0.35,
+      "micro_iou": {
+        "test": 0.8164954306937318,
+        "bolivia": 0.7806925575629154
+      }
+    }
+  },
+  "events": {
+    "Nigeria": {
+      "country": "Nigeria",
+      "s1_date": "2018-09-21",
+      "split": "test",
+      "worldpop_year": 2018,
+      "boundaries_license": "Creative Commons Attribution 4.0 International (CC BY 4.0)"
+    },
+    "Sri-Lanka": {
+      "country": "Sri Lanka",
+      "s1_date": "2017-05-30",
+      "split": "test",
+      "worldpop_year": 2017,
+      "boundaries_license": "Open Data Commons Open Database License 1.0"
+    },
+    "Bolivia": {
+      "country": "Bolivia",
+      "s1_date": "2018-02-15",
+      "split": "bolivia",
+      "worldpop_year": 2018,
+      "boundaries_license": "Public Domain"
+    },
+    "Somalia": {
+      "country": "Somalia",
+      "s1_date": "2018-05-07",
+      "split": "test",
+      "worldpop_year": 2018,
+      "boundaries_license": "Creative Commons Attribution 4.0 (CC BY 4.0)"
+    },
+    "Pakistan": {
+      "country": "Pakistan",
+      "s1_date": "2017-06-28",
+      "split": "test",
+      "worldpop_year": 2017,
+      "boundaries_license": "Public Domain"
+    }
+  }
+}
