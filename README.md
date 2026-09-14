@@ -2,7 +2,7 @@
 
 Aribu maps floodwater from satellite imagery with deep learning, and uses the maps to estimate how many people live in the flooded areas. We train U-Nets (neural networks that label every pixel of an image) on the Sen1Floods11 dataset, compare them with a classical threshold baseline, and present the results in a Streamlit app.
 
-Try the app here: **[aribu-demo.streamlit.app](https://aribu-demo.streamlit.app/)**
+Try the app here: **[aribu-batch.streamlit.app](https://aribu-batch.streamlit.app/)**
 
 ## Results
 
@@ -60,7 +60,7 @@ For each chip, we count the people living where the model detects flood water:
 
 ## The app
 
-The [Streamlit app](https://aribu-demo.streamlit.app/) has two sections:
+The [Streamlit app](https://aribu-batch.streamlit.app/) has two sections:
 
 - **Flood maps**: browse the held-out chips of five flood events (Nigeria, Sri Lanka, Bolivia, Somalia and Pakistan). For each chip, we show the radar, the water index and the true-colour image, next to the predictions of both models, coloured by correct water, false alarm and missed water.
 - **Exposure**: pick an event, a model and a decision threshold, and see the exposed people and flooded area per district on a map and in a table (which can be downloaded as a CSV file).
