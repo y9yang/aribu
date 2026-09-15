@@ -6,14 +6,11 @@ Both models' water probabilities on every chip of each event, with population an
     python -m aribu.demo
 """
 import json
-import math
-import urllib.request
 import geopandas as gpd
 import numpy as np
 import rasterio
 from PIL import Image
 from rasterio.transform import array_bounds
-from rasterio.windows import Window
 from tqdm import tqdm
 from .dataset import LABEL_WATER, SPLIT_ORDER, load_chip, read_split, valid_mask, water_indices
 from .exposure import districts_on_grid, pixel_area_m2, population_on_grid
@@ -21,7 +18,8 @@ from .metrics import confusion, metrics_from_counts
 from .model import chip_prob, load_checkpoint
 from .paths import DATA_DIR, DEMO_DIR, METADATA_PATH, MODELS_DIR, RAW_DIR, RESULTS_DIR
 from .report import write_json
-from .viz import INDEX_CMAPS, percentile_limits, true_colour
+from .sources import download, geoboundaries, population_window
+from .viz import mndwi_image, radar_image, true_colour
 
 __all__ = ["EVENTS", "MODELS", "CACHE_DIR", "SWAPS", "event_chips", "build_event", "main"]
 
@@ -30,49 +28,16 @@ MODELS = {"radar": ("Radar only", "radar-only.pt", "radar-only (s1)"),
           "fusion": ("Radar + optical", "fusion.pt", "fusion (s1+s2)")}   # key: (label, checkpoint, unet.json name)
 CACHE_DIR = DATA_DIR / "cache"
 WORLDPOP = "https://data.worldpop.org/GIS/Population/Global_2000_2020/{year}/{iso}/{iso_lower}_ppp_{year}.tif"
-GEOBOUNDARIES = "https://www.geoboundaries.org/api/current/gbOpen/{iso}/ADM2/"
 # test chip -> validation chip, dropping big no-data patches, low fusion IoU, or a chip that is all water
 SWAPS = {"Nigeria_417184": "Nigeria_1095404", "Somalia_166342": "Somalia_12849",
          "Pakistan_664885": "Pakistan_94095", "Pakistan_528249": "Pakistan_210595",
          "Sri-Lanka_534068": "Sri-Lanka_612594", "Sri-Lanka_1049830": "Sri-Lanka_321316",
          "Sri-Lanka_117737": "Sri-Lanka_236030"}
 
-def _download(url, path):
-    """Fetch `url` to `path` once."""
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        part = path.with_name(path.name + ".part")
-        urllib.request.urlretrieve(url, part)
-        part.replace(path)
-    return path
-
 def event_chips(event):
     """Held-out chip ids for one event: the Bolivia split, or the event's test chips with SWAPS applied."""
     split = "bolivia" if event == "Bolivia" else "test"
     return [SWAPS.get(c, c) for c in read_split(split) if c.split("_")[0] == event]
-
-def _population_window(path, bounds, pad=0.002):
-    """WorldPop counts around `bounds`, padded, as (array, transform)."""
-    with rasterio.open(path) as src:
-        left, bottom, right, top = bounds
-        col0, row0 = ~src.transform * (left - pad, top + pad)
-        col1, row1 = ~src.transform * (right + pad, bottom - pad)
-        window = Window(math.floor(col0), math.floor(row0),          # pyright: ignore[reportCallIssue]
-                        math.ceil(col1) - math.floor(col0), math.ceil(row1) - math.floor(row0))
-        pop = src.read(1, window=window, boundless=True, fill_value=src.nodata)
-        return pop, src.window_transform(window)
-
-def _display_vh(vh):
-    """VH backscatter as greyscale uint8, no-data light grey."""
-    lo, hi = percentile_limits(vh)
-    grey = np.clip((vh - lo) / (hi - lo), 0, 1) * 255
-    return np.where(np.isfinite(vh), grey, 217).astype(np.uint8)
-
-def _display_mndwi(chip_id):
-    """MNDWI coloured as in error_panel, as RGB uint8."""
-    arr = water_indices(chip_id)[1]
-    lim = max(np.percentile(np.abs(arr), 98), 1e-6)
-    return (INDEX_CMAPS["MNDWI"](np.clip((arr + lim) / (2 * lim), 0, 1))[..., :3] * 255).astype(np.uint8)
 
 def build_event(event, props, models):
     """Write data/demo/<event>/: chips.npz, districts.geojson and three JPEGs per held-out chip.
@@ -81,10 +46,10 @@ def build_event(event, props, models):
     the chip viewer shows, stored first, best fusion IoU first. Returns the event's manifest entry.
     """
     year, iso = props["s1_date"][:4], props["ISO_CC"]
-    pop_path = _download(WORLDPOP.format(year=year, iso=iso, iso_lower=iso.lower()),
-                         CACHE_DIR / f"{iso.lower()}_ppp_{year}.tif")
-    info = json.loads(_download(GEOBOUNDARIES.format(iso=iso), CACHE_DIR / f"geoBoundaries-{iso}-ADM2.json").read_text())
-    districts = gpd.read_file(_download(info["gjDownloadURL"], CACHE_DIR / f"geoBoundaries-{iso}-ADM2.geojson"))
+    pop_path = download(WORLDPOP.format(year=year, iso=iso, iso_lower=iso.lower()),
+                        CACHE_DIR / f"{iso.lower()}_ppp_{year}.tif")
+    info, districts_path = geoboundaries(iso, CACHE_DIR)
+    districts = gpd.read_file(districts_path)
 
     out = DEMO_DIR / event
     out.mkdir(parents=True, exist_ok=True)
@@ -101,7 +66,7 @@ def build_event(event, props, models):
         with rasterio.open(RAW_DIR / "JRCWaterHand" / f"{chip_id}_JRCWaterHand.tif") as src:
             arrays["perm"].append(src.read(1) == 1)
         b = array_bounds(*shape, c.transform)           # pyright: ignore[reportCallIssue]
-        pop, pop_transform = _population_window(pop_path, b)
+        pop, pop_transform = population_window(pop_path, b)
         arrays["pop"].append(population_on_grid(pop, pop_transform, c.transform, shape))
         arrays["district"].append(districts_on_grid(districts.geometry, c.transform, shape)
                                   .astype(np.int16)) # pyright: ignore[reportOptionalMemberAccess]
@@ -113,8 +78,8 @@ def build_event(event, props, models):
             arrays[f"prob_{name}"].append(np.round(p * 255).astype(np.uint8))
 
         if chip_id in held_out:
-            Image.fromarray(_display_vh(c.vh)).save(out / f"{chip_id}_vh.jpg", quality=90)
-            Image.fromarray(_display_mndwi(chip_id)).save(out / f"{chip_id}_mndwi.jpg", quality=90)
+            Image.fromarray(radar_image(c.vh)).save(out / f"{chip_id}_vh.jpg", quality=90)
+            Image.fromarray(mndwi_image(water_indices(chip_id)[1])).save(out / f"{chip_id}_mndwi.jpg", quality=90)
             Image.fromarray((true_colour(chip_id) * 255).astype(np.uint8)).save(out / f"{chip_id}_rgb.jpg", quality=90)
         arrays["ids"].append(chip_id)
         arrays["held_out"].append(chip_id in held_out)

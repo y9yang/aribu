@@ -12,8 +12,8 @@ __all__ = [
     "LABEL_NODATA", "LABEL_LAND", "LABEL_WATER",
     "CLIP_LO", "CLIP_HI", "VV_BAND", "VH_BAND", "IGNORE_INDEX",
     "S2_BANDS", "SPLIT_FILES", "SPLIT_ORDER", "ARMS",
-    "Chip", "load_chip", "valid_mask", "preprocess", "read_split", "load_splits",
-    "read_s2", "water_indices", "chip_input", "cloud_mask", "occluded_input",
+    "Chip", "load_chip", "valid_mask", "radar_input", "preprocess", "read_split", "load_splits",
+    "read_s2", "normalised_indices", "water_indices", "stack_arm", "chip_input", "cloud_mask", "occluded_input",
 ]
 
 LABEL_NODATA, LABEL_LAND, LABEL_WATER = -1, 0, 1
@@ -65,31 +65,37 @@ def valid_mask(chip):
     """
     return np.isfinite(chip.vv) & np.isfinite(chip.vh) & (chip.label != LABEL_NODATA)
 
-def preprocess(chip, mean=None, std=None):
-    """Turn a Chip into model input, target, and mask.
+def radar_input(vv, vh, mean=None, std=None):
+    """VV and VH backscatter in dB as model input, float32 (2, H, W), clipped to [CLIP_LO, CLIP_HI].
 
     Pass both mean and std, or neither.
 
-    With stats: x is clipped, standardised, and invalid pixels are filled
+    With stats: x is standardised, and pixels without a measurement are filled
     with 0, which after standardising *is* the dataset mean.
 
-    Without stats: x stays in decibels and invalid pixels stay NaN. Select with `valid` before using x.
+    Without stats: x stays in decibels and pixels without a measurement stay NaN.
+    """
+    if (mean is None) != (std is None):
+        raise ValueError("pass both mean and std, or neither")
+    x = np.clip(np.stack([vv, vh]).astype(np.float32), CLIP_LO, CLIP_HI)
+    if mean is not None:
+        m = np.asarray(mean, np.float32)[:, None, None]
+        s = np.asarray(std, np.float32)[:, None, None]
+        x = np.nan_to_num((x - m) / s, nan=0.0)
+    return x
+
+def preprocess(chip, mean=None, std=None):
+    """Turn a Chip into model input, target, and mask.
+
+    x as in `radar_input`: pass both mean and std, or neither. Without them, select with `valid` before using x.
 
     Returns
     x: float32 (2, H, W) -- channels (VV, VH), clipped to [CLIP_LO, CLIP_HI]
     y: uint8 (H, W) -- 0 land, 1 water, IGNORE_INDEX where unusable
     valid: bool (H, W) -- the validity mask
     """
-    if (mean is None) != (std is None):
-        raise ValueError("pass both mean and std, or neither")
+    x = radar_input(chip.vv, chip.vh, mean, std)
     valid = valid_mask(chip)
-    x = np.stack([chip.vv, chip.vh]).astype(np.float32)
-    x = np.clip(x, CLIP_LO, CLIP_HI)
-    if mean is not None:
-        m = np.asarray(mean, np.float32)[:, None, None]
-        s = np.asarray(std, np.float32)[:, None, None]
-        x = (x - m) / s
-        x = np.nan_to_num(x, nan=0.0)
     y = np.where(chip.label == LABEL_WATER, 1, 0).astype(np.uint8)
     y[~valid] = IGNORE_INDEX
     return x, y, valid
@@ -99,33 +105,49 @@ def read_s2(chip_id, bands):
     with rasterio.open(S2_DIR / f"{chip_id}_S2Hand.tif") as src:
         return src.read([S2_BANDS[b] for b in bands]).astype(np.float32)
 
-def water_indices(chip_id):
-    """NDWI and MNDWI as float32 (2, H, W), -1 <= values <= 1.
+def normalised_indices(green, nir, swir):
+    """NDWI and MNDWI as float32 (2, H, W), -1 <= values <= 1, from Sentinel-2 bands B3, B8 and B11.
 
     NDWI  = (green - NIR)   / (green + NIR)
     MNDWI = (green - SWIR1) / (green + SWIR1), which holds up better over built-up ground
+
+    0 where an index is undefined, such as 0/0 where Sentinel-2 has no data.
     """
-    green, nir, swir = read_s2(chip_id, ("B3", "B8", "B11"))
+    green, nir, swir = (np.asarray(b, np.float32) for b in (green, nir, swir))
     with np.errstate(invalid="ignore", divide="ignore"):
         a = np.stack([(green - nir) / (green + nir), (green - swir) / (green + swir)])
-    return np.nan_to_num(a, nan=0.0, posinf=0.0, neginf=0.0)    # S2 no-data is 0, so 0/0 off-swath
+    return np.nan_to_num(a, nan=0.0, posinf=0.0, neginf=0.0)
+
+def water_indices(chip_id):
+    """NDWI and MNDWI of one chip, as in `normalised_indices`."""
+    return normalised_indices(*read_s2(chip_id, ("B3", "B8", "B11")))
+
+def _check_arm(arm):
+    if arm not in ARMS:
+        raise ValueError(f"unknown arm {arm!r}; expected one of {ARMS}")
+
+def stack_arm(radar, indices, arm):
+    """Model input (C, H, W) for `arm` from `radar_input` and `normalised_indices`.
+
+    `C = 4 if arm == "s1+s2" else 2`. The part that `arm` does not use may be None.
+    """
+    _check_arm(arm)
+    if arm == "s1":
+        return radar
+    return indices if arm == "s2" else np.concatenate([radar, indices])
 
 def chip_input(chip_id, arm, mean, std):
     """Model input (C, H, W) and target labels (H, W) for one chip.
 
     `arm` from `ARMS`; `C = 4 if arm == "s1+s2" else 2`.
     """
-    if arm not in ARMS:
-        raise ValueError(f"unknown arm {arm!r}; expected one of {ARMS}")
+    _check_arm(arm)
     x, y, _ = preprocess(load_chip(chip_id), mean, std)
-    if arm == "s1":
-        return x, y
-    s2 = water_indices(chip_id)
-    return (s2 if arm == "s2" else np.concatenate([x, s2])), y
+    return stack_arm(x, None if arm == "s1" else water_indices(chip_id), arm), y
 
 def cloud_mask(chip_id, fraction, shape=(512, 512), sigma=24):
     """Simulated cloud occlusion over `fraction` of the chip. `True` for covered pixels.
-    
+
     Seeded according to `chip_id` so the same chip always gets the same mask.
     """
     if fraction <= 0:

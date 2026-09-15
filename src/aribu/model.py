@@ -1,3 +1,4 @@
+import os
 import numpy as np
 # pandas must load before torchvision (pulled in by smp): the reverse order crashes Python on Windows (0xC0000374)
 import pandas  # noqa: F401
@@ -7,9 +8,11 @@ from tqdm import tqdm
 from .dataset import LABEL_WATER, load_chip, occluded_input, valid_mask
 from .metrics import confusion, metrics_from_counts
 
-__all__ = ["DEVICE", "AMP", "ENCODER", "build_unet", "load_checkpoint", "chip_prob", "make_predictor", "micro_iou"]
+__all__ = ["DEVICE", "AMP", "ENCODER", "build_unet", "load_checkpoint", "prob_from_input", "chip_prob",
+           "make_predictor", "micro_iou"]
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# ARIBU_DEVICE=cpu forces the CPU, so live runs on the laptop take as long as on a CPU-only host
+DEVICE = os.environ.get("ARIBU_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu")
 AMP = dict(device_type=DEVICE, dtype=torch.float16, enabled=DEVICE == "cuda")
 ENCODER = "resnet34"
 
@@ -28,15 +31,19 @@ def load_checkpoint(path):
     return model.to(DEVICE).eval(), ckpt
 
 @torch.inference_mode()
+def prob_from_input(model, x):
+    """Water probability (H, W) from a model input `x`, a NumPy array (C, H, W)."""
+    xb = torch.from_numpy(np.ascontiguousarray(x, np.float32))[None].to(DEVICE)
+    with torch.autocast(**AMP):          # pyright: ignore[reportCallIssue, reportArgumentType]
+        return torch.sigmoid(model(xb).float())[0, 0].cpu().numpy()
+
 def chip_prob(model, arm, chip_id, mean, std, fraction=0.0):
     """
     Water probability (H, W) for one chip.
-    
+
     Optional: `fraction` the of chip covered by synthetic clouds.
     """
-    x = torch.from_numpy(occluded_input(chip_id, arm, fraction, mean, std)[0])[None].to(DEVICE)
-    with torch.autocast(**AMP):          # pyright: ignore[reportCallIssue, reportArgumentType]
-        return torch.sigmoid(model(x).float())[0, 0].cpu().numpy()
+    return prob_from_input(model, occluded_input(chip_id, arm, fraction, mean, std)[0])
 
 def make_predictor(model, arm, mean, std, thresh=0.5):
     """Return the trained model for the specified arm, preprocessing statistics, and decision threshold."""
@@ -51,7 +58,7 @@ def make_predictor(model, arm, mean, std, thresh=0.5):
 def micro_iou(model, arm, chip_ids, thresholds, mean, std, fraction=0.0, desc=""):
     """
     Given a list of thresholds, score the model for the given arm by micro IoU for each threshold over a list of chips.
-    
+
     Optional: `fraction` the of chip covered by synthetic clouds.
     """
     model.to(DEVICE).eval()
