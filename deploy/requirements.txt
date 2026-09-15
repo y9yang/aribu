@@ -1,0 +1,12 @@
+streamlit==1.62.0
+pydeck==0.9.3
+numpy==2.5.2
+pandas==3.0.5
+scipy==1.18.0
+matplotlib==3.11.1
+pillow==12.3.0
+rasterio==1.5.1
+segmentation-models-pytorch==0.5.0
+timm==1.0.28
+tqdm==4.70.0
+earthengine-api==1.7.43
