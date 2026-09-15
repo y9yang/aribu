@@ -6,7 +6,7 @@ from .dataset import (CLIP_HI, CLIP_LO, LABEL_LAND, LABEL_NODATA, LABEL_WATER,
 from .metrics import confusion, metrics_from_counts
 
 __all__ = ["LABEL_CMAP", "LABEL_NAMES", "ERROR_COLOURS", "INDEX_CMAPS",
-           "percentile_limits", "shifted_cmap", "true_colour", "error_panel"]
+           "percentile_limits", "shifted_cmap", "stretch_rgb", "true_colour", "radar_image", "mndwi_image", "error_panel"]
 
 LABEL_CMAP = plt.get_cmap("Blues").copy()
 LABEL_CMAP.set_bad("0.85")   # masked (no-data) pixels -> light grey
@@ -53,7 +53,10 @@ def true_colour(chip_id, low=2, high=98):
 
     Each channel is stretched between its own percentiles.
     """
-    a = read_s2(chip_id, ("B4", "B3", "B2"))
+    return stretch_rgb(read_s2(chip_id, ("B4", "B3", "B2")), low, high)
+
+def stretch_rgb(a, low=2, high=98):
+    """`true_colour` for Sentinel-2 bands already in memory, as float32 (3, H, W) with 0 marking no data."""
     empty = (a == 0).all(0)
     out = np.empty_like(a)
     for i, band in enumerate(a):
@@ -62,6 +65,21 @@ def true_colour(chip_id, low=2, high=98):
     rgb = np.moveaxis(out, 0, -1)       # move the channel axis to the end for `imshow`
     rgb[empty] = 1.0
     return rgb
+
+def radar_image(band):
+    """Backscatter in dB as greyscale uint8, no data in the no-data grey of ERROR_COLOURS."""
+    lo, hi = percentile_limits(band)
+    grey = np.clip((band - lo) / max(hi - lo, 1e-6), 0, 1) * 255
+    return np.where(np.isfinite(band), grey, ERROR_COLOURS[4, 0] * 255).astype(np.uint8)
+
+def mndwi_image(mndwi, no_data=None):
+    """MNDWI coloured as in `error_panel`, as RGB uint8, with `no_data` pixels in the no-data grey."""
+    seen = np.abs(mndwi if no_data is None else mndwi[~no_data])
+    lim = max(np.percentile(seen, 98), 1e-6) if seen.size else 1.0
+    rgb = INDEX_CMAPS["MNDWI"](np.clip((mndwi + lim) / (2 * lim), 0, 1))[..., :3] * 255
+    if no_data is not None:
+        rgb[no_data] = ERROR_COLOURS[4] * 255
+    return rgb.astype(np.uint8)
 
 def error_panel(chip_id, predict_fn, axes, first="VH"):
     """Four panels on the given axes: first, truth, prediction, colour-coded errors.
