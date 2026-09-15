@@ -1,0 +1,15 @@
+.git
+.vscode
+.claude
+**/__pycache__
+**/*.egg-info
+.pytest_cache
+notebooks
+tests
+data/*
+!data/demo
+!data/live
+Sen1Floods11-master
+**/.env*
+**/*.key.json
+.streamlit/secrets.toml
