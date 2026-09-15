@@ -20,6 +20,7 @@ dependencies:
   - ipywidgets
   - streamlit
   - pydeck
+  - earthengine-api
   - pytest
   - pip
   - pip:

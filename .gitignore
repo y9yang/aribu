@@ -2,6 +2,10 @@
 .claude/
 .ipynb_checkpoints/
 
+# keys and local environment files
+*.key.json
+.env*
+
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -17,6 +21,7 @@ data/*
 !data/splits/
 !data/external/
 !data/demo/
+!data/live/
 
 models/*
 !models/.gitkeep
