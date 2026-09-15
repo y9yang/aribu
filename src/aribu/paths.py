@@ -8,7 +8,7 @@ for _var, _sub in (("GDAL_DATA", "Library/share/gdal"), ("PROJ_DATA", "Library/s
 
 __all__ = [
     "REPO_ROOT", "DATA_DIR", "RAW_DIR", "SPLIT_DIR",
-    "RESULTS_DIR", "DEMO_DIR", "EXTERNAL_DIR", "MODELS_DIR",
+    "RESULTS_DIR", "DEMO_DIR", "LIVE_DIR", "EXTERNAL_DIR", "MODELS_DIR",
     "S1_DIR", "S2_DIR", "LABEL_DIR", "OTSU_DIR", "METADATA_PATH",
 ]
 
@@ -21,6 +21,7 @@ RAW_DIR      = DATA_DIR / "raw" / "HandLabeled"
 SPLIT_DIR    = DATA_DIR / "splits"
 RESULTS_DIR  = DATA_DIR / "results"
 DEMO_DIR     = DATA_DIR / "demo"
+LIVE_DIR     = DATA_DIR / "live"
 EXTERNAL_DIR = DATA_DIR / "external"
 MODELS_DIR   = REPO_ROOT / "models"
 

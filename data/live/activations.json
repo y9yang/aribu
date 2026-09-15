@@ -1,0 +1,68 @@
+{
+  "EMSR838": {
+    "name": "Flood in Pakistan",
+    "country": "Pakistan",
+    "area": "Sharaqpur",
+    "event_date": "2025-08-29",
+    "image": {
+      "sensor": "Sentinel-1",
+      "time": "2025-08-28T01:07"
+    },
+    "pre_event_image": {
+      "sensor": "Sentinel-2",
+      "time": "2025-06-10T05:37"
+    },
+    "link": "https://mapping.emergency.copernicus.eu/activations/EMSR838/",
+    "boundaries_license": "Public Domain",
+    "extent": [
+      73.875105,
+      31.239539,
+      74.401036,
+      31.719476
+    ]
+  },
+  "EMSR857": {
+    "name": "Flood in Mozambique and South Africa",
+    "country": "Mozambique",
+    "area": "Chinhangane",
+    "event_date": "2026-01-10",
+    "image": {
+      "sensor": "Sentinel-1",
+      "time": "2026-01-17T03:18"
+    },
+    "pre_event_image": {
+      "sensor": "Sentinel-2",
+      "time": "2025-11-23T07:55"
+    },
+    "link": "https://mapping.emergency.copernicus.eu/activations/EMSR857/",
+    "boundaries_license": "Creative Commons Attribution 3.0 Intergovernmental Organisations (CC BY 3.0 IGO)",
+    "extent": [
+      32.161194,
+      -24.233147,
+      32.641132,
+      -23.799203
+    ]
+  },
+  "EMSR865": {
+    "name": "Flood in Cordoba, Colombia",
+    "country": "Colombia",
+    "area": "Monter\u00eda",
+    "event_date": "2026-01-26",
+    "image": {
+      "sensor": "Sentinel-1",
+      "time": "2026-02-02T23:14"
+    },
+    "pre_event_image": {
+      "sensor": "Sentinel-2",
+      "time": "2025-01-10T15:36"
+    },
+    "link": "https://mapping.emergency.copernicus.eu/activations/EMSR865/",
+    "boundaries_license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+    "extent": [
+      -76.172468,
+      8.133702,
+      -75.600543,
+      9.349539
+    ]
+  }
+}
