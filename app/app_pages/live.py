@@ -9,7 +9,6 @@ from aribu import live
 from aribu.dataset import normalised_indices
 from aribu.exposure import districts_on_grid, pixel_area_m2, population_on_grid, tally
 from aribu.metrics import confusion, metrics_from_counts
-from aribu.model import DEVICE, load_checkpoint, prob_from_input
 from aribu.paths import DEMO_DIR, LIVE_DIR, MODELS_DIR
 from aribu.sources import population_window
 from aribu.viz import mndwi_image, radar_image
@@ -35,6 +34,8 @@ def earth_engine():
 
 @st.cache_resource(show_spinner=False)
 def load_model(name):
+    # imported here, not at the top: PyTorch takes several seconds to import, so the page opens without it
+    from aribu.model import load_checkpoint
     return load_checkpoint(MODELS_DIR / CHECKPOINTS[name])
 
 @st.cache_data(ttl="6h", max_entries=100, show_spinner=False)
@@ -91,7 +92,10 @@ def run_square(code, square_id, bounds, scenes, name, day, models):
             t0 = time.perf_counter()
             square = fetch_square(left, top, scenes)
             st.write(f"Downloaded the radar and optical bands of square {square_id} in {time.perf_counter() - t0:.1f} s")
+            status.update(label="Loading the model...")
+            from aribu.model import DEVICE, prob_from_input     # as in load_model
             model, ckpt = load_model(name)
+            status.update(label="Running...")
             norm = ckpt["normalisation"]
             t0 = time.perf_counter()
             prob = prob_from_input(model, live.square_input(square, ckpt["arm"], norm["mean"], norm["std"]))
