@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aribu"
 version = "0.1.0"
-description = "Flood-water segmentation from Sentinel-1 SAR imagery"
+description = "Flood-water segmentation from Sentinel-1 radar and Sentinel-2 optical imagery"
 requires-python = ">=3.14"
 # Dependencies live in environment.yml, not here. rasterio and geopandas need
 # conda's GDAL binaries; letting pip resolve them installs a second, conflicting
