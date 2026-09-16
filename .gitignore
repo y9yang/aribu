@@ -24,6 +24,5 @@ data/*
 !data/live/
 
 models/*
-!models/.gitkeep
 !models/radar-only.pt
 !models/fusion.pt
