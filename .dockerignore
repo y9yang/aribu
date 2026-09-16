@@ -12,4 +12,3 @@ data/*
 Sen1Floods11-master
 **/.env*
 **/*.key.json
-.streamlit/secrets.toml

@@ -20,7 +20,7 @@ COPY --chown=user models/fusion.pt models/radar-only.pt models/
 COPY --chown=user data/demo/ data/demo/
 COPY --chown=user data/live/ data/live/
 
-COPY --chown=user .streamlit/ .streamlit/
+COPY --chown=user .streamlit/config.toml .streamlit/
 COPY --chown=user app/ app/
 
 EXPOSE 8080
