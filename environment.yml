@@ -17,10 +17,10 @@ dependencies:
   - pillow
   - tqdm
   - ipykernel
-  - ipywidgets
   - streamlit
   - pydeck
   - earthengine-api
+  - huggingface_hub
   - pytest
   - pip
   - pip:
