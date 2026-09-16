@@ -1,5 +1,4 @@
 import aribu            # GDAL fix, keep first
-import importlib.util
 import os
 import streamlit as st
 
@@ -19,9 +18,8 @@ st.html("""<style>
 </style>""")
 
 def live_available():
-    """The live page needs torch and Earth Engine installed, and a service account key."""
-    installed = all(importlib.util.find_spec(m) for m in ("torch", "ee"))
-    return installed and bool(os.environ.get("EE_KEY_JSON") or os.environ.get("EE_KEY_FILE"))
+    """The live page needs a service account key for Earth Engine."""
+    return bool(os.environ.get("EE_KEY_JSON") or os.environ.get("EE_KEY_FILE"))
 
 past = st.Page("app_pages/past_floods.py", title="Past floods", default=True)
 live = st.Page("app_pages/live.py", title="Live", url_path="live")
