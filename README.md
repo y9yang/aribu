@@ -20,7 +20,7 @@ What we learned along the way:
 
 - Both U-Nets beat the baseline on both splits. Note that the radar-only U-Net improves more on Bolivia (+0.12) than on the test split (+0.09).
 - Adding the optical channels makes the **biggest** difference. In fact, a U-Net trained on the optical channels alone scores even higher on the test split (0.83). But keep in mind that clouds often hide the ground during a flood, and optical satellites cannot see through them (radar can).
-- To decide which optical model to keep, we covered growing parts of the optical input with synthetic clouds. As expected, the radar + optical model degrades more gracefully than the optical-only one. Note that it still falls below the radar-only model once 50% of each chip is hidden on the test split (25% on Bolivia), which is why we keep both models. The live page uses the Bolivia number to choose between them.
+- To decide which optical model to keep, we covered growing parts of the optical input with synthetic clouds. As expected, the radar + optical model degrades more gracefully than the optical-only one. Note that it still falls below the radar-only model once 50% of each chip is hidden on the test split (25% on Bolivia), which is why we keep both models. The Live page uses the Bolivia number to choose between them.
 - The *macro* IoU, where we score each chip separately and then average, is much lower: 0.39 for radar only and 0.55 for radar + optical on the test split. Chips with very little water pull the average down, since a handful of wrong pixels already ruins their score.
 
 ## How it works
@@ -58,14 +58,14 @@ For each chip, we count the people living where the model detects flood water:
 2. **People**: WorldPop gives a head count for grid cells of about 100 m, which we spread evenly over the 10 m pixels inside each cell.
 3. **Districts**: second-level administrative areas (ADM2) from geoBoundaries. We add up the exposed people and the flooded area per district.
 
-### Recent floods
+### Recent floods (the Live page)
 
-We picked three recent floods that the analysts of the Copernicus Emergency Management Service (EMS) have mapped, and cut each mapped area into 5 km squares, the size of a chip. We keep the squares that are at least 5% inside the analysts' flood outline. See [src/aribu/activations.py](src/aribu/activations.py).
+We picked three recent floods that the analysts of the Copernicus Emergency Management Service (EMS) have mapped, and cut each mapped area into 5 km squares. The squares are our own grid (only their size comes from the chips). We keep the squares that are at least 5% inside the analysts' flood outline.
 
-When you pick a square and press **Run**:
+We prepare most of what the page needs in advance with [src/aribu/activations.py](src/aribu/activations.py), and store it in [data/live/](data/live/): the squares, the analysts' map of each square, the water there before the flood, the population and the districts. Only the satellite images and the permanent water are downloaded, when you pick a square and press **Run**:
 
-1. **Images**: we take the Sentinel-1 image closest to the chosen date (at most 3 days away), and the Sentinel-2 image closest to that one. We download both from Google Earth Engine and prepare them as in Sen1Floods11, which was itself exported from Earth Engine: radar in dB, Sentinel-2 Level-1C, on the same 10 m grid. As a check, the downloaded images of the Bolivia chips give the same IoU as the dataset's own (0.72 and 0.78).
-2. **Model**: from 25% cloud over the square, we pick radar only, and below it radar + optical (you can override this). Where Sentinel-2 sees cloud, both water indices are set to 0, as in our cloud tests.
+1. **Images**: we take the Sentinel-1 image closest to the chosen date (at most 3 days away), and the Sentinel-2 image closest to that one (again at most 3 days away). We download both from Google Earth Engine and prepare them as in Sen1Floods11, which was itself exported from Earth Engine: radar in dB, Sentinel-2 Level-1C, on the same 10 m grid. Without a Sentinel-1 image, the square cannot be mapped, and the page says so. As a check, the downloaded images of the Bolivia chips give the same IoU as the dataset's own (0.72 and 0.78).
+2. **Model**: when 25% or more of the square is under cloud, we pick radar only, and below that radar + optical (you can override this). Pixels without a Sentinel-2 image count as cloud. Where Sentinel-2 sees cloud, both water indices are set to 0, as in our cloud tests. The model runs on the GPU if there is one, else on the CPU.
 3. **Agreement**: there are no hand labels, so we compute IoU against the analysts' map instead. The analysts mapped only the flood, so we add the water that was already there: open water in their Sentinel-2 image from before the flood (MNDWI above 0.2), and JRC permanent water where that image is cloudy. Both maps then show all water, as the hand labels do.
 4. **Exposure**: as for the chips, with GHS-POP R2023A (its 2025 layer, cells of about 90 m) in place of WorldPop. The exposed people are shown as a range, from moving the threshold 0.1 either side.
 
@@ -74,9 +74,13 @@ When you pick a square and press **Run**:
 The [app](https://huggingface.co/spaces/Gwynpleina/aribu) has two pages:
 
 - **Past floods**: browse the held-out chips of five flood events (Nigeria, Sri Lanka, Bolivia, Somalia and Pakistan). For each chip, we show the radar, the water index and the true-colour image, next to the predictions of both models, coloured by correct water, false alarm and missed water. Below, pick an event, a model and a decision threshold, and see the exposed people and flooded area per district on a map and in a table (which can be downloaded as a CSV file). The predictions were computed in advance and are stored in [data/demo/](data/demo/).
-- **Live**: pick one of the recent floods (Pakistan, Mozambique or Colombia) and a date, and click a square on the map. The page shows the images it found, the cloud over the square and the model it picked. Press **Run** to see the model's map next to the analysts' map, their agreement (IoU) and the exposure table for that square.
+- **Live**: pick one of the three recent floods (Pakistan, Mozambique or Colombia) and a date (by default, the day of the analysts' image), and click a square on the map. The page shows the dates of the images it found, the cloud over the square and the model it picked. Press **Run** to download the images and run the model. You then see the model's map next to the analysts' map, their agreement (IoU) and the exposure table for that square.
 
-The app does not need a GPU. The live page only appears when an Earth Engine key is set (see below), so without one the app shows the first page only.
+Neither page needs a GPU: Past floods shows predictions computed in advance, and the Live page runs the model on the CPU when there is no GPU (as on the Space).
+
+Everything the app reads is in the repository: the two checkpoints in [models/](models/), and the prepared data in [data/demo/](data/demo/) and [data/live/](data/live/). So the app runs right after cloning, without the dataset.
+
+On the Space, the Live page just works. When you run the app yourself, the Live page needs an Earth Engine key (see below) to download the images. Without one, the app shows the Past floods page only.
 
 Keep in mind that the Space sleeps after 48 hours without visitors, so the first visit after that takes a while to load.
 
@@ -84,9 +88,9 @@ Keep in mind that the Space sleeps after 48 hours without visitors, so the first
 
 ### Requirements
 
-- [conda](https://conda-forge.org/download/) (Miniforge or Miniconda)
-- An NVIDIA GPU, since the environment installs the GPU build of PyTorch. To run only the app, Docker is enough (see below).
-- For the live page: a Google Earth Engine key (see below).
+- To use the app: nothing, it runs on the [Space](https://huggingface.co/spaces/Gwynpleina/aribu).
+- To run the app yourself: Docker (see [Running with Docker](#running-with-docker)), or the conda environment below if you have an NVIDIA GPU. For the Live page, also a Google Earth Engine key.
+- To retrain the models or rebuild the data: [conda](https://conda-forge.org/download/) (Miniforge or Miniconda) and an NVIDIA GPU, since the environment installs the GPU build of PyTorch.
 
 ### Installation
 
@@ -103,11 +107,16 @@ Note that the environment has to be **activated**. Calling the environment's `py
 
 ### Earth Engine access
 
-The live page downloads its images from Google Earth Engine, which needs a login for the app:
+You need this only to run the Live page yourself (the Space has its own key) or to rebuild `data/live/`. The Live page downloads its images from Google Earth Engine, which needs a login for the app:
 
 1. Create a Google Cloud project, register it for **noncommercial** Earth Engine use, and enable the Earth Engine API.
 2. Create a service account in that project with the roles Earth Engine Resource Viewer and Service Usage Consumer, and download a JSON key for it. Keep the key outside the repository, since anyone with the file can use the project's quota.
-3. Before starting the app, set the environment variable `EE_KEY_FILE` to the path of the key (or `EE_KEY_JSON` to its text).
+3. Before starting the app, set the environment variable `EE_KEY_FILE` to the path of the key (or `EE_KEY_JSON` to its text). The app looks only for these two variables, so a personal Earth Engine login is not enough.
+
+   ```bash
+   export EE_KEY_FILE=/path/to/key.json         # bash
+   $env:EE_KEY_FILE = "C:\path\to\key.json"     # PowerShell
+   ```
 
 ### Running the app
 
@@ -124,9 +133,9 @@ docker build -t aribu .
 docker run --rm -p 8080:8080 -v /path/to/key.json:/run/secrets/ee.key.json:ro -e EE_KEY_FILE=/run/secrets/ee.key.json aribu
 ```
 
-Then open <http://localhost:8080>. Without `-v` and `-e`, the app shows the first page only.
+Then open <http://localhost:8080>. Without `-v` and `-e`, the app shows the Past floods page only.
 
-To update the Space, log in with `hf auth login` and run [deploy/hf-space/deploy_hf.py](deploy/hf-space/deploy_hf.py), which uploads everything the image needs. The Space reads its settings from [deploy/hf-space/README.md](deploy/hf-space/README.md) (uploaded as its README), and gets the key from the secret `EE_KEY_JSON`.
+To update the Space, log in with `hf auth login` and run [deploy/hf-space/deploy_hf.py](deploy/hf-space/deploy_hf.py), which uploads everything the image needs. The Space reads its settings from [deploy/hf-space/README.md](deploy/hf-space/README.md) (uploaded as its README), and gets the key from a secret named `EE_KEY_JSON` in the Space's settings.
 
 ### Reproducing the results
 
@@ -143,7 +152,7 @@ To update the Space, log in with `hf auth login` and run [deploy/hf-space/deploy
    python -m aribu.demo
    ```
 
-4. Rebuild the live page's data. This needs Earth Engine access, and downloads the EMS products, GHS-POP and geoBoundaries into `data/cache/` on the first run:
+4. Rebuild the Live page's data. This needs the Earth Engine key from above, and downloads the EMS products, GHS-POP and geoBoundaries into `data/cache/` on the first run:
 
    ```bash
    python -m aribu.activations
@@ -205,7 +214,7 @@ All the logic lives in `src/aribu/`. The notebooks import from it and are commit
 
 ## Limitations
 
-- The hand-labelled chips cover only a small part of each flood, so the exposure numbers describe the mapped chips (or the one square, on the live page). We do not scale them up to the whole event or to entire districts.
+- The hand-labelled chips cover only a small part of each flood, so the exposure numbers describe the mapped chips (or the one square, on the Live page). We do not scale them up to the whole event or to entire districts.
 - The analysts' map has errors of its own, and it can be from a different day than our radar image. So the live IoU tells us how well two maps agree, which says less about accuracy than IoU against hand labels.
 - *Exposed* means living where we mapped flood water, which is not the same as needing aid.
 - GHS-POP's 2025 layer is a projection from earlier censuses.
@@ -216,12 +225,12 @@ All the logic lives in `src/aribu/`. The notebooks import from it and are commit
 ## Data and credits
 
 - **Sen1Floods11**: Bonafilia, D., Tellman, B., Anderson, T. and Issenberg, E. (2020). *Sen1Floods11: a georeferenced dataset to train and test deep learning flood algorithms for Sentinel-1.* CVPR Workshops.
-- **Copernicus Sentinel-1 and Sentinel-2** data, downloaded for the live page through [Google Earth Engine](https://earthengine.google.com/).
+- **Copernicus Sentinel-1 and Sentinel-2** data, downloaded for the Live page through [Google Earth Engine](https://earthengine.google.com/).
 - **Copernicus Emergency Management Service**: flood outlines from the Rapid Mapping activations EMSR838, EMSR857 and EMSR865, © European Union, [mapping.emergency.copernicus.eu](https://mapping.emergency.copernicus.eu/).
 - **WorldPop**: population counts at about 100 m, [worldpop.org](https://www.worldpop.org/).
 - **GHS-POP R2023A**: Schiavina, M., Freire, S., Carioli, A. and MacManus, K. (2023). *GHS-POP R2023A: GHS population grid multitemporal (1975-2030).* European Commission, Joint Research Centre. doi:10.2905/2FF68A52-5B5B-4A22-8F40-C41DA8332CFE.
 - **geoBoundaries**: Runfola, D. et al. (2020). *geoBoundaries: a global database of political administrative boundaries.* PLOS ONE. The license differs per country and is shown in the app.
-- **JRC Global Surface Water**: Pekel, J.-F., Cottam, A., Gorelick, N. and Belward, A. S. (2016). *High-resolution mapping of global surface water and its long-term changes.* Nature. The permanent water layer ships with Sen1Floods11, and the live page takes it from Earth Engine.
+- **JRC Global Surface Water**: Pekel, J.-F., Cottam, A., Gorelick, N. and Belward, A. S. (2016). *High-resolution mapping of global surface water and its long-term changes.* Nature. The permanent water layer ships with Sen1Floods11, and the Live page takes it from Earth Engine.
 - **U-Net**: Ronneberger, O., Fischer, P. and Brox, T. (2015). *U-Net: convolutional networks for biomedical image segmentation.* MICCAI.
 
 ## About the name
