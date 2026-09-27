@@ -9,7 +9,7 @@ from .dataset import IGNORE_INDEX, LABEL_WATER, chip_input
 from .metrics import confusion, metrics_from_counts
 from .model import AMP, DEVICE
 
-__all__ = ["BATCH", "ChipData", "build_cache", "masked_bce", "val_iou", "train"]
+__all__ = ["BATCH", "ChipData", "build_cache", "masked_bce", "loss_iou", "train"]
 
 BATCH = 8
 
@@ -50,22 +50,29 @@ def masked_bce(logits, y):
     return (loss * keep).sum() / keep.sum()         # the pixel-wise multiplication kills the loss for invalid pixels
 
 @torch.no_grad()
-def val_iou(model, X, y, thresh=0.5):
-    """Micro IoU over a cached split, counted by aribu.metrics.confusion."""
+def loss_iou(model, X, y, thresh=0.5):
+    """Masked BCE and micro IoU over a cached split, the IoU counted by aribu.metrics.confusion.
+
+    Returns (loss, iou), both pooled over every labelled pixel of the split.
+    """
     model.eval()
-    counts = np.zeros(4, np.int64)          # tp, fp, fn, tn
+    counts, total, n_pixels = np.zeros(4, np.int64), 0.0, 0          # counts: tp, fp, fn, tn
     for i in range(0, len(X), BATCH):
         with torch.autocast(**AMP):          # pyright: ignore[reportCallIssue, reportArgumentType]
-            logits = model(torch.from_numpy(X[i:i + BATCH]).to(DEVICE))
-        prob = torch.sigmoid(logits.float())[:, 0].cpu().numpy()
+            logits = model(torch.from_numpy(X[i:i + BATCH]).to(DEVICE)).float()
         yb = y[i:i + BATCH]
+        n = int((yb != IGNORE_INDEX).sum())
+        if n:                                # masked_bce is 0/0 on a batch with no labelled pixel
+            total += masked_bce(logits, torch.from_numpy(yb).to(DEVICE)).item() * n
+            n_pixels += n
+        prob = torch.sigmoid(logits)[:, 0].cpu().numpy()
         counts += confusion(prob > thresh, yb == LABEL_WATER, yb != IGNORE_INDEX)
-    return metrics_from_counts(counts)["iou"]
+    return total / n_pixels, metrics_from_counts(counts)["iou"]
 
 def train(model, loader, X_val, y_val, epochs=30, lr=3e-4):
     """Train a model with AdamW and mixed precision (AMP), keeping the best epoch by validation IoU.
 
-    Returns the best IoU and per-epoch history.
+    Returns the best val IoU and the per-epoch history (epoch, train_loss, val_loss, train_iou, val_iou).
     """
     model = model.to(DEVICE)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
@@ -75,7 +82,6 @@ def train(model, loader, X_val, y_val, epochs=30, lr=3e-4):
     bar = tqdm(range(1, epochs + 1))
     for epoch in bar:
         model.train()
-        total = 0.0
         for Xb, yb in loader:
             Xb, yb = Xb.to(DEVICE), yb.to(DEVICE)
             opt.zero_grad(set_to_none=True)
@@ -84,13 +90,14 @@ def train(model, loader, X_val, y_val, epochs=30, lr=3e-4):
             scaler.scale(loss).backward()
             scaler.step(opt)
             scaler.update()
-            total += loss.item()
 
-        loss, iou = total / len(loader), val_iou(model, X_val, y_val)
-        history.append({"epoch": epoch, "loss": loss, "val_iou": iou})
-        if iou > best_iou:
-            best_iou, best_state = iou, copy.deepcopy(model.state_dict())
-        bar.set_postfix(loss=f"{loss:.4f}", val_iou=f"{iou:.4f}")
+        train_loss, train_iou = loss_iou(model, loader.dataset.X, loader.dataset.y)
+        val_loss, val_iou = loss_iou(model, X_val, y_val)
+        history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
+                        "train_iou": train_iou, "val_iou": val_iou})
+        if val_iou > best_iou:
+            best_iou, best_state = val_iou, copy.deepcopy(model.state_dict())
+        bar.set_postfix(train_iou=f"{train_iou:.4f}", val_iou=f"{val_iou:.4f}")
 
     model.load_state_dict(best_state)
     return best_iou, pd.DataFrame(history)
