@@ -1,12 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.lines import Line2D
 from .dataset import (CLIP_HI, CLIP_LO, LABEL_LAND, LABEL_NODATA, LABEL_WATER,
                       load_chip, read_s2, valid_mask, water_indices)
 from .metrics import confusion, metrics_from_counts
 
 __all__ = ["LABEL_CMAP", "LABEL_NAMES", "ERROR_COLOURS", "INDEX_CMAPS",
-           "percentile_limits", "shifted_cmap", "stretch_rgb", "true_colour", "radar_image", "mndwi_image", "error_panel"]
+           "percentile_limits", "shifted_cmap", "stretch_rgb", "true_colour", "radar_image", "mndwi_image", "error_panel",
+           "plot_history"]
 
 LABEL_CMAP = plt.get_cmap("Blues").copy()
 LABEL_CMAP.set_bad("0.85")   # masked (no-data) pixels -> light grey
@@ -120,3 +122,27 @@ def error_panel(chip_id, predict_fn, axes, first="VH"):
     for ax in axes:
         ax.set_xticks([])
         ax.set_yticks([])
+
+def plot_history(hists, baseline=None):
+    """Plot the loss and IoU curves per epoch, one colour per model, val solid and train dashed."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4), sharex=True)
+    colours = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    for colour, (name, h) in zip(colours, hists.items()):
+        for ax, metric in ((ax1, "loss"), (ax2, "iou")):
+            ax.plot(h["epoch"], h[f"train_{metric}"], "--", color=colour, alpha=0.6)
+            ax.plot(h["epoch"], h[f"val_{metric}"], color=colour, label=name)
+        best = h["val_iou"].idxmax()
+        ax2.plot(h["epoch"][best], h["val_iou"][best], "o", color=colour, markersize=6)
+
+    if baseline is not None:
+        ax2.axhline(baseline, color="grey", linestyle=":", linewidth=1)
+        ax2.annotate("threshold baseline", (1, baseline), fontsize=8, va="bottom", color="grey")
+    ax1.set(xlabel="epoch", ylabel="masked BCE", title="loss")
+    ax2.set(xlabel="epoch", ylabel="micro IoU", title="IoU")
+    ax1.legend(fontsize=8)
+    ax2.legend([Line2D([], [], color="black"), Line2D([], [], color="black", linestyle="--", alpha=0.6)],
+               ["val", "train"], fontsize=8)
+    for ax in (ax1, ax2):
+        ax.grid(alpha=0.3)
+    fig.tight_layout()
+    return fig
