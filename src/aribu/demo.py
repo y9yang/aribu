@@ -40,7 +40,8 @@ def event_chips(event):
     return [SWAPS.get(c, c) for c in read_split(split) if c.split("_")[0] == event]
 
 def build_event(event, props, models):
-    """Write data/demo/<event>/: chips.npz, districts.geojson and three JPEGs per held-out chip.
+    """Write data/demo/<event>/: chips.npz, districts.geojson and three JPEGs per held-out chip
+    (Sentinel-1 VH, Sentinel-2 MNDWI and Sentinel-2 true colour).
 
     chips.npz holds the event's chips from all splits, for the exposure. `held_out` marks the ones
     the chip viewer shows, stored first, best fusion IoU first. Returns the event's manifest entry.

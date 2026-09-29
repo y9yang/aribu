@@ -39,14 +39,17 @@ def prob_from_input(model, x):
 
 def chip_prob(model, arm, chip_id, mean, std, fraction=0.0):
     """
-    Water probability (H, W) for one chip.
+    Water probability (H, W) for one chip, from its Sentinel-1 image, Sentinel-2 image or both, depending on `arm`.
 
-    Optional: `fraction` the of chip covered by synthetic clouds.
+    Optional: `fraction` of the chip under synthetic clouds, which hide only the Sentinel-2 channels.
     """
     return prob_from_input(model, occluded_input(chip_id, arm, fraction, mean, std)[0])
 
 def make_predictor(model, arm, mean, std, thresh=0.5):
-    """Return the trained model for the specified arm, preprocessing statistics, and decision threshold."""
+    """The `make_predictor` for `evaluate_with_chip_id`, from a trained model with its arm, normalisation and threshold.
+
+    Each chip's predictor builds its own input from the chip id, so it ignores the vv and vh it receives.
+    """
     model = model.to(DEVICE).eval()
 
     def for_chip(chip_id):
@@ -59,7 +62,7 @@ def micro_iou(model, arm, chip_ids, thresholds, mean, std, fraction=0.0, desc=""
     """
     Given a list of thresholds, score the model for the given arm by micro IoU for each threshold over a list of chips.
 
-    Optional: `fraction` the of chip covered by synthetic clouds.
+    Optional: `fraction` of each chip under synthetic clouds, which hide only the Sentinel-2 channels.
     """
     model.to(DEVICE).eval()
     counts = np.zeros((len(thresholds), 4), np.int64)

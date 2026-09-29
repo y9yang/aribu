@@ -65,13 +65,19 @@ def _score_chips(make_predictor, chip_ids, name):
 def evaluate(predict_fn, chip_ids, name="model"):
     """Score any predictor over any set of chips.
 
+    `predict_fn(vv, vh, valid)` gets a chip's Sentinel-1 bands and its `valid_mask`, and returns a bool water mask.
+
     Returns micro metrics (pool every pixel), macro metrics (average over chips), and
     the per-chip counts.
     """
     return _score_chips(lambda _chip_id: predict_fn, chip_ids, name)
 
 def evaluate_with_chip_id(make_predictor, chip_ids, name="model"):
-    """evaluate(), but the predictor depends on the chip's identity."""
+    """evaluate(), but the predictor depends on the chip's identity.
+
+    Use it when the predictor needs more than the Sentinel-1 bands, such as the Sentinel-2 image:
+    `make_predictor(chip_id)` returns that chip's `predict_fn`.
+    """
     return _score_chips(make_predictor, chip_ids, name)
 
 def compare(*results, keys=("iou", "f1", "precision", "recall", "accuracy")):

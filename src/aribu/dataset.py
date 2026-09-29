@@ -1,3 +1,9 @@
+"""Read and prepare Sen1Floods11 chips.
+
+A chip is one 512 × 512 tile, about 5 km square, with three files under the same chip id: the Sentinel-1
+image (S1Hand), the Sentinel-2 image (S2Hand) and the hand label (LabelHand). Note that `load_chip` reads
+only the Sentinel-1 bands and the label; the Sentinel-2 bands come from `read_s2`.
+"""
 from typing import NamedTuple
 from zlib import crc32
 import numpy as np
@@ -33,7 +39,7 @@ SPLIT_ORDER = tuple(SPLIT_FILES)
 ARMS = ("s1", "s1+s2", "s2")     # using data from which sensors to train and evaluate a model
 
 class Chip(NamedTuple):
-    """the data contained in a chip."""
+    """The Sentinel-1 bands and hand label of a chip (its Sentinel-2 bands come from `read_s2`)."""
     id: str
     loc: str            # the location/country name, parsed from the chip id with exception: Mekong -> Cambodia
     vv: np.ndarray          # float32 (512, 512), dB, NaN where no measurement
@@ -43,7 +49,7 @@ class Chip(NamedTuple):
     transform: Affine            # the transform of the radar bands
 
 def load_chip(chip_id):
-    """Read one chip's data into a Chip object."""
+    """Read one chip's Sentinel-1 VV and VH bands and its hand label into a Chip object."""
     with rasterio.open(S1_DIR / f"{chip_id}_S1Hand.tif") as src:
         vv = src.read(VV_BAND)
         vh = src.read(VH_BAND)
@@ -59,7 +65,8 @@ def load_chip(chip_id):
 def valid_mask(chip):
     """
     Pixels on a chip where a prediction can be both made and scored.
-    A pixel is valid if and only if it has a valid VV and VH measurement and a valid label.
+    A pixel is valid if and only if it has a valid Sentinel-1 VV and VH measurement and a valid label.
+    Sentinel-2 is not checked, even for the s2 arm.
 
     Returns a bool array.
     """
@@ -85,7 +92,7 @@ def radar_input(vv, vh, mean=None, std=None):
     return x
 
 def preprocess(chip, mean=None, std=None):
-    """Turn a Chip into model input, target, and mask.
+    """Turn a Chip into Sentinel-1 model input, target, and mask.
 
     x as in `radar_input`: pass both mean and std, or neither. Without them, select with `valid` before using x.
 
@@ -101,7 +108,7 @@ def preprocess(chip, mean=None, std=None):
     return x, y, valid
 
 def read_s2(chip_id, bands):
-    """Read Sentinel-2 chips at given bands as float32 (len(bands), H, W). 0 marks no data."""
+    """Read one chip's Sentinel-2 image at given bands as float32 (len(bands), H, W). 0 marks no data."""
     with rasterio.open(S2_DIR / f"{chip_id}_S2Hand.tif") as src:
         return src.read([S2_BANDS[b] for b in bands]).astype(np.float32)
 
@@ -119,7 +126,7 @@ def normalised_indices(green, nir, swir):
     return np.nan_to_num(a, nan=0.0, posinf=0.0, neginf=0.0)
 
 def water_indices(chip_id):
-    """NDWI and MNDWI of one chip, as in `normalised_indices`."""
+    """NDWI and MNDWI of one chip's Sentinel-2 image, as in `normalised_indices`."""
     return normalised_indices(*read_s2(chip_id, ("B3", "B8", "B11")))
 
 def _check_arm(arm):
@@ -139,7 +146,8 @@ def stack_arm(radar, indices, arm):
 def chip_input(chip_id, arm, mean, std):
     """Model input (C, H, W) and target labels (H, W) for one chip.
 
-    `arm` from `ARMS`; `C = 4 if arm == "s1+s2" else 2`.
+    `arm` from `ARMS`; `C = 4 if arm == "s1+s2" else 2`. Whatever the arm, the target is masked
+    by `valid_mask`, which checks Sentinel-1 only.
     """
     _check_arm(arm)
     x, y, _ = preprocess(load_chip(chip_id), mean, std)

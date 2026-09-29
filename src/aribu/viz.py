@@ -86,7 +86,8 @@ def mndwi_image(mndwi, no_data=None):
 def error_panel(chip_id, predict_fn, axes, first="VH"):
     """Four panels on the given axes: first, truth, prediction, colour-coded errors.
 
-    first is either "VH" or "MNDWI" to select the first panel.
+    first is either "VH" (Sentinel-1) or "MNDWI" (Sentinel-2) to select the first panel.
+    `predict_fn` is called as in `evaluate`, with the chip's Sentinel-1 bands.
 
     `axes` must be a sequence of four matplotlib axes.
     """
