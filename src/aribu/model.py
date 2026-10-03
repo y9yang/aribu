@@ -11,14 +11,14 @@ from .metrics import confusion, metrics_from_counts
 __all__ = ["DEVICE", "AMP", "ENCODER", "build_unet", "load_checkpoint", "prob_from_input", "chip_prob",
            "make_predictor", "micro_iou"]
 
-# ARIBU_DEVICE=cpu forces the CPU, so live runs on the laptop take as long as on a CPU-only host
+# ARIBU_DEVICE="cpu" forces the CPU, so live page will always run on CPU
 DEVICE = os.environ.get("ARIBU_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu")
-AMP = dict(device_type=DEVICE, dtype=torch.float16, enabled=DEVICE == "cuda")
+AMP = {"device_type": DEVICE, "enabled": DEVICE == "cuda"}
 ENCODER = "resnet34"
 
-def build_unet(in_channels):
-    """Build an `smp.Unet` with ImageNet-pretrained ResNet-34 encoder."""
-    return smp.Unet(ENCODER, encoder_weights="imagenet", in_channels=in_channels, classes=1)
+def build_unet(in_channels, encoder_weights="imagenet"):
+    """Build an `smp.Unet` with a ResNet-34 encoder, ImageNet-pretrained by default."""
+    return smp.Unet(ENCODER, encoder_weights=encoder_weights, in_channels=in_channels, classes=1)
 
 def load_checkpoint(path):
     """Rebuild a frozen U-Net in eval mode on DEVICE.
@@ -26,14 +26,14 @@ def load_checkpoint(path):
     Returns (model, checkpoint); the checkpoint holds arm, threshold and normalisation.
     """
     ckpt = torch.load(path, map_location="cpu", weights_only=True)
-    model = smp.Unet(ENCODER, encoder_weights=None, in_channels=ckpt["in_channels"], classes=1)
+    model = build_unet(ckpt["in_channels"], encoder_weights=None)
     model.load_state_dict({k: v.float() for k, v in ckpt["state_dict"].items()})
     return model.to(DEVICE).eval(), ckpt
 
 @torch.inference_mode()
 def prob_from_input(model, x):
     """Water probability (H, W) from a model input `x`, a NumPy array (C, H, W)."""
-    xb = torch.from_numpy(np.ascontiguousarray(x, np.float32))[None].to(DEVICE)
+    xb = torch.from_numpy(x)[None].to(DEVICE)
     with torch.autocast(**AMP):          # pyright: ignore[reportCallIssue, reportArgumentType]
         return torch.sigmoid(model(xb).float())[0, 0].cpu().numpy()
 
