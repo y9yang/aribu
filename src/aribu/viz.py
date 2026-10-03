@@ -25,7 +25,7 @@ ERROR_COLOURS = np.array([
 
 def percentile_limits(band, low=2, high=98):
     """
-    Colour limits for displaying a raster band, ignoring invalid pixels.
+    Colour limits for displaying a Sentinel-1 band, ignoring invalid pixels.
     Returns (vmin, vmax) to pass to imshow.
     """
     finite = band[np.isfinite(band)]
