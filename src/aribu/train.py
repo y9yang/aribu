@@ -9,9 +9,9 @@ from .dataset import IGNORE_INDEX, LABEL_WATER, chip_input
 from .metrics import confusion, metrics_from_counts
 from .model import AMP, DEVICE
 
-__all__ = ["BATCH", "ChipData", "build_cache", "masked_bce", "loss_iou", "train"]
+__all__ = ["BATCH_SIZE", "ChipData", "build_cache", "masked_bce", "loss_iou", "train"]
 
-BATCH = 8
+BATCH_SIZE = 8
 
 class ChipData(Dataset):
     """Cached data (X, y), to be handed to a DataLoader."""
@@ -57,16 +57,16 @@ def loss_iou(model, X, y, thresh=0.5):
     """
     model.eval()
     counts, total, n_pixels = np.zeros(4, np.int64), 0.0, 0          # counts: tp, fp, fn, tn
-    for i in range(0, len(X), BATCH):
+    for i in range(0, len(X), BATCH_SIZE):
         with torch.autocast(**AMP):          # pyright: ignore[reportCallIssue, reportArgumentType]
-            logits = model(torch.from_numpy(X[i:i + BATCH]).to(DEVICE)).float()
-        yb = y[i:i + BATCH]
+            logits = model(torch.from_numpy(X[i:i + BATCH_SIZE]).to(DEVICE)).float()
+        yb = y[i:i + BATCH_SIZE]
         n = int((yb != IGNORE_INDEX).sum())
-        if n:                                # masked_bce is 0/0 on a batch with no labelled pixel
+        if n:                                # skip batches with no labelled pixel
             total += masked_bce(logits, torch.from_numpy(yb).to(DEVICE)).item() * n
             n_pixels += n
-        prob = torch.sigmoid(logits)[:, 0].cpu().numpy()
-        counts += confusion(prob > thresh, yb == LABEL_WATER, yb != IGNORE_INDEX)
+            prob = torch.sigmoid(logits).squeeze(1).cpu().numpy()
+            counts += confusion(prob > thresh, yb == LABEL_WATER, yb != IGNORE_INDEX)
     return total / n_pixels, metrics_from_counts(counts)["iou"]
 
 def train(model, loader, X_val, y_val, epochs=30, lr=3e-4):
