@@ -26,16 +26,16 @@ def load_checkpoint(path):
     Returns (model, checkpoint); the checkpoint holds arm, threshold and normalisation.
     """
     ckpt = torch.load(path, map_location="cpu", weights_only=True)
-    model = build_unet(ckpt["in_channels"], encoder_weights=None)
+    model = build_unet(ckpt["in_channels"], encoder_weights=None)   # pyright: ignore[reportArgumentType]
     model.load_state_dict({k: v.float() for k, v in ckpt["state_dict"].items()})
     return model.to(DEVICE).eval(), ckpt
 
 @torch.inference_mode()
 def prob_from_input(model, x):
     """Water probability (H, W) from a model input `x`, a NumPy array (C, H, W)."""
-    xb = torch.from_numpy(x)[None].to(DEVICE)
+    xb = torch.from_numpy(x).unsqueeze(0).to(DEVICE)
     with torch.autocast(**AMP):          # pyright: ignore[reportCallIssue, reportArgumentType]
-        return torch.sigmoid(model(xb).float())[0, 0].cpu().numpy()
+        return torch.sigmoid(model(xb).float()).squeeze(0, 1).cpu().numpy()
 
 def chip_prob(model, arm, chip_id, mean, std, fraction=0.0):
     """
